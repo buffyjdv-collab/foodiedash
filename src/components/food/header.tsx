@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Search, ShoppingCart, MapPin, ChevronDown, User, Receipt, Sparkles, UtensilsCrossed } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { useFoodStore, cartCount } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { AISearchDialog } from './ai-search-dialog'
@@ -54,9 +54,11 @@ export function Header() {
             </button>
           </SheetTrigger>
           <SheetContent side="left" className="w-[320px]">
-            <div className="p-5">
-              <h3 className="mb-1 text-lg font-bold">Choose your location</h3>
-              <p className="mb-4 text-sm text-muted-foreground">Select a delivery area to see restaurants near you</p>
+            <SheetHeader className="p-5 pb-2">
+              <SheetTitle className="text-lg font-bold">Choose your location</SheetTitle>
+              <SheetDescription className="text-sm text-muted-foreground">Select a delivery area to see restaurants near you</SheetDescription>
+            </SheetHeader>
+            <div className="px-5 pb-5">
               <div className="space-y-2">
                 {LOCATIONS.map((loc) => (
                   <button

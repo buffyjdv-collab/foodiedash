@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
@@ -73,9 +73,13 @@ export function CartDrawer() {
             <ShoppingBag className="h-5 w-5 text-primary" />
             Your Cart
           </SheetTitle>
-          {cartRestaurantName && (
-            <p className="text-sm text-muted-foreground">From <span className="font-semibold text-foreground">{cartRestaurantName}</span></p>
-          )}
+          <SheetDescription className="text-sm text-muted-foreground">
+            {cartRestaurantName ? (
+              <>From <span className="font-semibold text-foreground">{cartRestaurantName}</span></>
+            ) : (
+              'Review your items and proceed to checkout'
+            )}
+          </SheetDescription>
         </SheetHeader>
 
         {cart.length === 0 ? (
