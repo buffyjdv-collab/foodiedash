@@ -6,12 +6,16 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Phone, ArrowLeft, ArrowRight, Loader2, ShieldCheck, KeyRound, Sparkles, CheckCircle2, UserCircle2 } from 'lucide-react'
+import { Phone, ArrowLeft, ArrowRight, Loader2, ShieldCheck, KeyRound, Sparkles, CheckCircle2, UserCircle2, Store, Bike, User, Building2, Landmark, Activity, LifeBuoy, Megaphone, ChefHat } from 'lucide-react'
 import { useAuthStore } from '@/lib/auth-store'
 import { useFoodStore } from '@/lib/store'
-import { DEMO_ACCOUNTS, DEMO_OTP } from '@/lib/demo-users'
+import { DEMO_ACCOUNTS, DEMO_OTP, ROLE_CATEGORIES, accountsByCategory } from '@/lib/demo-users'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+
+const ICON_MAP: Record<string, any> = {
+  ShieldCheck, Building2, Landmark, Activity, LifeBuoy, Megaphone, Store, ChefHat, Bike, User,
+}
 
 type Step = 'phone' | 'otp' | 'success'
 
@@ -20,6 +24,16 @@ export function LoginDialog() {
   const setOpen = useAuthStore((s) => s.setLoginOpen)
   const setUser = useAuthStore((s) => s.setUser)
   const setView = useFoodStore((s) => s.setView)
+
+  // Route the user to their role-specific dashboard after a successful login.
+  const routeAfterLogin = (userData: any) => {
+    const roles: string[] = userData.roles || []
+    let target: 'home' | 'admin' | 'rider' | 'restaurant-portal' = 'home'
+    if (roles.includes('DELIVERY_PARTNER')) target = 'rider'
+    else if (roles.some((r: string) => ['RESTAURANT_OWNER', 'RESTAURANT_STAFF'].includes(r))) target = 'restaurant-portal'
+    else if (roles.some((r: string) => !['CUSTOMER', 'DELIVERY_PARTNER', 'RESTAURANT_OWNER', 'RESTAURANT_STAFF'].includes(r))) target = 'admin'
+    setTimeout(() => setView(target), 100)
+  }
 
   const [step, setStep] = useState<Step>('phone')
   const [phone, setPhone] = useState('')
@@ -92,6 +106,7 @@ export function LoginDialog() {
       toast.success(`Welcome, ${data.user.name || data.user.phone}!`, {
         description: `Signed in as ${data.user.roleLabels?.join(', ') || data.user.roles.join(', ')}`,
       })
+      routeAfterLogin(data.user)
       setTimeout(() => {
         setOpen(false)
       }, 1400)
@@ -149,6 +164,7 @@ export function LoginDialog() {
       toast.success(`Welcome, ${data.user.name || data.user.phone}!`, {
         description: `Signed in as ${data.user.roleLabels?.join(', ') || data.user.roles.join(', ')}`,
       })
+      routeAfterLogin(data.user)
       setTimeout(() => setOpen(false), 1400)
     } catch {
       setError('Network error')
@@ -211,35 +227,54 @@ export function LoginDialog() {
               <ArrowRight className="h-4 w-4" />
             </Button>
 
-            {/* Demo accounts quick login */}
+            {/* Demo accounts quick login — grouped by role category */}
             <div className="mt-5">
-              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <UserCircle2 className="h-3.5 w-3.5" />
                 Quick demo login (one-click)
               </div>
-              <ScrollArea className="max-h-[280px]">
-                <div className="grid gap-1.5 pr-2">
-                  {DEMO_ACCOUNTS.map((acct) => (
-                    <button
-                      key={acct.phone}
-                      onClick={() => quickLogin(acct.phone)}
-                      disabled={sending}
-                      className={cn(
-                        'flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2 text-left text-sm transition hover:border-primary hover:bg-accent disabled:opacity-50'
-                      )}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                          {acct.roleLabel.split(' ').map((w) => w[0]).join('').slice(0, 2)}
+              <ScrollArea className="max-h-[340px]">
+                <div className="space-y-4 pr-2">
+                  {ROLE_CATEGORIES.map((cat) => {
+                    const accounts = accountsByCategory(cat.id)
+                    if (accounts.length === 0) return null
+                    const CatIcon = ICON_MAP[cat.icon] || UserCircle2
+                    return (
+                      <div key={cat.id}>
+                        <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                          <CatIcon className="h-3.5 w-3.5 text-primary" />
+                          {cat.label}
+                          <span className="font-normal text-muted-foreground/60">· {cat.description}</span>
                         </div>
-                        <div>
-                          <div className="font-semibold leading-tight">{acct.roleLabel}</div>
-                          <div className="text-xs text-muted-foreground">{acct.name}</div>
+                        <div className="grid gap-1.5">
+                          {accounts.map((acct) => {
+                            const AcctIcon = ICON_MAP[acct.icon] || UserCircle2
+                            return (
+                              <button
+                                key={acct.phone}
+                                onClick={() => quickLogin(acct.phone)}
+                                disabled={sending}
+                                className={cn(
+                                  'flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2 text-left text-sm transition hover:border-primary hover:bg-accent disabled:opacity-50'
+                                )}
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
+                                    <AcctIcon className="h-4 w-4" />
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold leading-tight">{acct.roleLabel}</div>
+                                    <div className="text-xs text-muted-foreground">{acct.name}</div>
+                                  </div>
+                                </div>
+                                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                              </button>
+                            )
+                          })}
                         </div>
                       </div>
-                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                    </button>
-                  ))}
+                    )
+                  })}
                 </div>
               </ScrollArea>
               <p className="mt-2 text-center text-[11px] text-muted-foreground">

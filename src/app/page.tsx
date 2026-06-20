@@ -13,6 +13,8 @@ import { OrderTracking } from '@/components/food/order-tracking'
 import { OrdersList } from '@/components/food/orders-list'
 import { Profile } from '@/components/food/profile'
 import { AdminPortal } from '@/components/food/admin-portal'
+import { RiderDashboard } from '@/components/food/rider-dashboard'
+import { RestaurantDashboard } from '@/components/food/restaurant-dashboard'
 import { AIAssistant } from '@/components/food/ai-assistant'
 import { LoginDialog } from '@/components/food/login-dialog'
 
@@ -48,6 +50,8 @@ export default function Home() {
         {view === 'orders' && <OrdersList />}
         {view === 'profile' && <Profile />}
         {view === 'admin' && <AdminPortal />}
+        {view === 'rider' && <RiderDashboard />}
+        {view === 'restaurant-portal' && <RestaurantDashboard />}
       </main>
 
       <Footer />

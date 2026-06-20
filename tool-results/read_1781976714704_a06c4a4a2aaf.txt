@@ -216,3 +216,72 @@
    216→- Nearby restaurants shown sorted by precise distance with km/m badges.
    217→- Files: src/lib/geo.ts, prisma/seed-hyderabad.ts, src/app/api/restaurants/route.ts (updated), src/lib/store.ts (updated), src/lib/types.ts (updated), src/components/food/location-selector.tsx, src/components/food/header.tsx (updated), src/components/food/restaurant-card.tsx (updated), src/components/food/home-view.tsx (rewritten).
    218→
+   219→---
+   220→Task ID: 4+5
+   221→Agent: full-stack-developer (rider+restaurant admin UI)
+   222→Task: Upgrade admin RidersModule + RestaurantsModule to full CRUD with RBAC
+   223→
+   224→Work Log:
+   225→- Read worklog.md (prior tasks 3-c, 9, AUTH+RBAC, GEOLOCATION) and the existing /home/z/my-project/src/components/food/admin-portal.tsx (2090 lines). Confirmed the two modules to replace: RestaurantsModule + RestaurantsBody (read-only table with toast.info demo buttons) and RidersModule + RidersBody ("coming soon" placeholder). Confirmed imports already present (Button, Card, Badge, Avatar, Table, Dialog, Input, Label, Checkbox, Separator, Skeleton, Tabs).
+   226→- Read all the API routes I'd be calling: /api/admin/riders (GET/POST/PATCH/DELETE), /api/admin/restaurants (POST/PATCH/DELETE), /api/admin/cities (GET), /api/admin/menu (GET/POST), /api/admin/menu/categories/[id] (DELETE/PATCH), /api/admin/menu/items/[id] (PATCH/DELETE). Confirmed RBAC permission strings and request/response shapes match the task spec.
+   227→- Read /home/z/my-project/src/lib/rbac.ts (56 permissions, 10 roles), /home/z/my-project/src/lib/auth-store.ts (AuthUser type), and /home/z/my-project/src/lib/types.ts (Restaurant, MenuCategory, MenuItem interfaces). Confirmed Switch, Select, Sheet, AlertDialog, Textarea, ScrollArea UI components all exist in src/components/ui.
+   228→- Updated imports: added lucide icons (MapPin, Phone, UtensilsCrossed, ChevronRight, ChevronDown, Navigation, Package); added shadcn UI components (Textarea, Switch, Select+subcomponents, Sheet+subcomponents, AlertDialog+subcomponents, ScrollArea); extended the types import to include MenuCategory and MenuItem.
+   229→- Replaced RestaurantsModule + RestaurantsBody with a full CRUD surface:
+   230→  * New interfaces: CityListItem.
+   231→  * RestaurantsModule: lift addOpen + reloadToken state, render ModuleHeader with conditional "Add restaurant" button (restaurants.create), ParticleScopeBanner, AddRestaurantDialog, and RestaurantsBody with key={reloadToken}.
+   232→  * RestaurantsBody: fetches GET /api/restaurants, handles loading/empty/error states. Table columns: Restaurant (image thumbnail + name + Promoted + Pure veg badges + cuisine), Rating (★ badge), Cost for two (formatINR), Delivery time, Fee, Status (Active/Inactive). Per-row actions conditionally rendered: "Manage Menu" (menus.read), Edit (restaurants.update), Delete (restaurants.delete).
+   233→  * AddRestaurantDialog: sm:max-w-2xl form with name, description (Textarea), cuisine, imageUrl, costForTwo, deliveryTime, deliveryFee, priceLevel (Select 1/2/3), isPureVeg (Switch), address, city (Select — fetched from /api/admin/cities via useCitiesFetcher hook), latitude, longitude. POST /api/admin/restaurants + toast + reset + refetch.
+   234→  * EditRestaurantDialog: same fields pre-filled + isActive, isPromoted, offer. Uses React "adjust state during render" prevTarget pattern to sync form state when target changes. PATCH /api/admin/restaurants/[id].
+   235→  * DeleteRestaurantDialog: AlertDialog confirmation. DELETE /api/admin/restaurants/[id].
+   236→  * MenuSheet: right-side Sheet (sm:max-w-2xl, p-0, flex-col). Uses displayed state (prev-restaurant pattern) so the close animation doesn't flash empty content. Fetches GET /api/admin/menu?restaurantId=... with reloadToken pattern. Shows collapsible category cards (ChevronDown/ChevronRight toggle) listing items with VegDot indicator (green/red square), Bestseller/Recommended/Unavailable badges, formatINR price, and per-item Edit/Delete buttons. Add Category inline input (POST type:'category'). Add Item dialog (POST type:'item') with name/description/price/imageUrl/isVeg switch/isBestSeller switch/isRecommended switch/spiceLevel select. Edit Item dialog with isAvailable switch (PATCH). Delete Item + Delete Category AlertDialogs.
+   237→  * All action buttons conditionally rendered based on canDo(user, 'menus.create'/'menus.update'/'menus.delete').
+   238→- Replaced RidersModule + RidersBody with a full CRUD surface:
+   239→  * New interface: RiderListItem.
+   240→  * RidersModule: lift addOpen + reloadToken state, render ModuleHeader with conditional "Add rider" button (riders.create), ParticleScopeBanner, AddRiderDialog, and RidersBody with key={reloadToken}.
+   241→  * RidersBody: fetches GET /api/admin/riders, handles 403 with a friendly "no access" card, loading/empty/error states. Table columns: Rider (avatar initials + name), Phone (Phone icon + mono), Vehicle (Navigation icon), Rating (★ badge), Total Deliveries, Online (Switch + label if riders.update, else Badge), Created (timeAgo), Actions. Per-row Edit (riders.update), Delete (riders.delete). Quick toggle online Switch in the row (riders.update) → PATCH isOnline.
+   242→  * AddRiderDialog: name, phone, vehicle inputs. POST /api/admin/riders.
+   243→  * EditRiderDialog: name/phone/vehicle/isOnline (Switch). prevTarget pattern. PATCH /api/admin/riders/[id].
+   244→  * DeleteRiderDialog: AlertDialog confirmation. DELETE /api/admin/riders/[id].
+   245→- All fetches use the `let mounted = true` + `.then().catch()` pattern; setState only fires inside async callbacks (never synchronously in effect bodies) so the `react-hooks/set-state-in-effect` rule passes.
+   246→- Preserved all other modules (Users, Roles, Orders, Coupons, Analytics, Settings, Overview, GenericModuleShell) — only the two target module groups + their helper sub-components were touched.
+   247→- Ran `bun run lint`: 0 errors, 0 warnings (had to remove one inline `eslint-disable-next-line @next/next/no-img-element` comment because that rule is already globally disabled — it produced an "Unused eslint-disable directive" warning).
+   248→- Ran `bunx tsc --noEmit`: 0 errors in admin-portal.tsx (errors only in pre-existing unrelated files: profile.tsx, restaurant-detail.tsx, examples/, skills/).
+   249→- Did NOT start the dev server (per task instructions).
+   250→- Wrote agent-ctx summary at /home/z/my-project/agent-ctx/4+5-full-stack-developer.md.
+   251→
+   252→Stage Summary:
+   253→- File modified: /home/z/my-project/src/components/food/admin-portal.tsx (2090 → 3748 lines; +1658 lines of new CRUD code).
+   254→- Functions replaced: RestaurantsModule, RestaurantsBody (read-only → full CRUD); RidersModule, RidersBody (placeholder → full CRUD).
+   255→- New functions added: AddRestaurantDialog, EditRestaurantDialog, DeleteRestaurantDialog, MenuSheet, AddItemDialog, EditItemDialog, AddRiderDialog, EditRiderDialog, DeleteRiderDialog, useCitiesFetcher hook.
+   256→- New interfaces added: CityListItem, RiderListItem.
+   257→- New imports added: Textarea, Switch, Select (+5 subcomponents), Sheet (+6 subcomponents), AlertDialog (+7 subcomponents), ScrollArea; lucide icons MapPin, Phone, UtensilsCrossed, ChevronRight, ChevronDown, Navigation, Package; types MenuCategory, MenuItem.
+   258→- Particle-level RBAC enforced on every action button: Add (create), Edit (update), Delete (delete), Toggle Online (update), Manage Menu (menus.read), Add/Edit/Delete Category & Item (menus.create/update/delete). Users with fewer permissions see fewer buttons — the whole point of the task.
+   259→- All API routes used (already existed — none created): GET/POST /api/admin/riders, PATCH/DELETE /api/admin/riders/[id], GET /api/restaurants, POST /api/admin/restaurants, PATCH/DELETE /api/admin/restaurants/[id], GET /api/admin/cities, GET/POST /api/admin/menu, DELETE /api/admin/menu/categories/[id], PATCH/DELETE /api/admin/menu/items/[id].
+   260→- Lint: 0 errors, 0 warnings. tsc: 0 errors in admin-portal.tsx.
+   261→
+   262→---
+   263→Task ID: RIDER+RESTAURANT MODULES (1-6)
+   264→Agent: Z.ai Code (orchestrator)
+   265→Task: Implement Rider & Restaurant modules end-to-end fullstack with RBAC
+   266→
+   267→Work Log:
+   268→- Built rider CRUD API: GET/POST /api/admin/riders (riders.read/create), PATCH/DELETE /api/admin/riders/[id] (riders.update/delete). All enforce requirePermission.
+   269→- Built restaurant management API: POST /api/admin/restaurants (restaurants.create), PATCH/DELETE /api/admin/restaurants/[id] (restaurants.update/delete). Includes slug auto-generation + uniqueness.
+   270→- Built menu management API: GET /api/admin/menu?restaurantId= (menus.read), POST /api/admin/menu (menus.create — handles both 'category' and 'item' types), PATCH/DELETE /api/admin/menu/categories/[id] (menus.update/delete), PATCH/DELETE /api/admin/menu/items/[id] (menus.update/delete).
+   271→- Built GET /api/admin/cities (restaurants.read) — for the restaurant create dialog's city dropdown.
+   272→- Delegated frontend upgrade (Task 4+5) to subagent: replaced the placeholder RidersModule and demo-only RestaurantsModule in admin-portal.tsx with full CRUD UIs. RidersModule now has: table (avatar, phone, vehicle, rating, deliveries, online toggle switch, created date), Add/Edit dialogs, Delete with AlertDialog confirmation. RestaurantsModule now has: table (image, cuisine, rating, cost, delivery, fee, promoted badge, status), Add/Edit dialogs (with city select, priceLevel, isPureVeg/isPromoted/isActive switches), Delete with confirmation, and a "Manage Menu" Sheet with collapsible categories, add/edit/delete items, VegDot indicators, Bestseller badges. All action buttons gated by canDo(user, permission).
+   273→
+   274→Verification (Agent Browser through Caddy gateway):
+   275→- Super Admin: Riders module shows 5 seeded riders + 1 new "Test Rider" (created via Add dialog). Full CRUD works — Add/Edit/Delete/Toggle all visible. ✅
+   276→- Super Admin: Restaurants module shows all 20 restaurants with Manage menu/Edit/Delete buttons. Manage Menu sheet opens with collapsible categories (Sushi Rolls, Ramen, Sides), items with Edit/Delete, Add Item dialog works (created "Dragon Roll"). ✅
+   277→- Support Agent: Admin portal shows only 5 modules — NO Riders or Restaurants modules (lacks riders.read + restaurants.read). ✅
+   278→- City Admin: Admin portal shows 8 modules including Riders + Restaurants. In Riders module: sees Add rider + Edit + Toggle, but NO Delete button (lacks riders.delete). ✅
+   279→- API RBAC enforcement (curl): City Admin DELETE rider → 403; City Admin GET riders → 200; City Admin POST restaurant → passed RBAC (500 on invalid data, not 403). ✅
+   280→- Console clean, lint 0 errors.
+   281→
+   282→Stage Summary:
+   283→- Rider module: full CRUD end-to-end with particle-level RBAC (riders.create/read/update/delete).
+   284→- Restaurant module: full CRUD + menu management (categories + items CRUD) with RBAC (restaurants.create/read/update/delete + menus.create/read/update/delete).
+   285→- 9 new API route files. admin-portal.tsx grew from 2090 → 3748 lines.
+   286→- RBAC verified at 3 layers: API (403/200), module visibility (5 vs 8 vs 14 modules), action buttons (City Admin sees no Delete rider button).
+   287→

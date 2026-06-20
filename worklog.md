@@ -284,3 +284,55 @@ Stage Summary:
 - Restaurant module: full CRUD + menu management (categories + items CRUD) with RBAC (restaurants.create/read/update/delete + menus.create/read/update/delete).
 - 9 new API route files. admin-portal.tsx grew from 2090 → 3748 lines.
 - RBAC verified at 3 layers: API (403/200), module visibility (5 vs 8 vs 14 modules), action buttons (City Admin sees no Delete rider button).
+
+---
+Task ID: 4+5
+Agent: frontend-styling-expert (rider+restaurant dashboards)
+Task: Build Rider Dashboard + Restaurant Dashboard views
+
+Work Log:
+- Read prior worklog + reference files: auth-store, store, format helpers, types, shared UI, profile.tsx (layout reference), orders-list.tsx (orders table reference), admin-portal.tsx (Switch usage), card/button/badge/switch/table/avatar/separator UI primitives, and the three target API routes (/api/rider/dashboard, /api/rider/status, /api/restaurant-portal/dashboard) to confirm exact payload shapes.
+- Built src/components/food/rider-dashboard.tsx (export RiderDashboard). Features: (1) Access control via useAuthStore — Sign-in prompt if logged out, "Delivery Partner role required" card if lacking DELIVERY_PARTNER/SUPER_ADMIN; super_admin gets a viewing-as-admin hint banner. (2) Loading skeleton + error state with retry. (3) Header card with avatar initials, name, phone, vehicle, rating, total deliveries, and an online/offline badge ("Online — accepting deliveries" green / "Offline" gray). (4) Prominent availability toggle using shadcn Switch that PATCHes /api/rider/status with optimistic state update + sonner toast feedback (handles errors + disabled while toggling). (5) Orange-gradient Earnings card showing totalEarnings via formatINR, broken into deliveryEarnings + tipEarnings, with "Completed today: N" hint. (6) Stats grid 2x2 mobile / 4-col desktop: Active, Today, Total, Rating. (7) Active Deliveries section with cards showing order code, restaurant name, pickup/drop addresses, item count, total, timeAgo, color-coded status badge, and a Track button calling goToTracking(order.id). Empty state prompts going online. (8) Recent Orders section with desktop Table + mobile list (orderCode, restaurant, status badge, total via formatINR, timeAgo).
+- Built src/components/food/restaurant-dashboard.tsx (export RestaurantDashboard). Features: (1) Access control — Sign-in prompt if logged out, "Restaurant role required" card if lacking RESTAURANT_OWNER/RESTAURANT_STAFF/SUPER_ADMIN; admin-viewing hint. (2) Loading skeleton + error with retry. (3) Header card with restaurant image thumbnail, name, cuisine, Active/Promoted badges, rating★+ratingCount, address+city, deliveryTime. "Edit menu" button (toasts "Available in Admin Portal > Restaurants") and "View store" button calling openRestaurant(slug). (4) Orange-gradient "Today's Revenue" card with todayOrders + avgOrderValue sub-stats. (5) Two stats rows (2x2 mobile / 4-col desktop): Active, Completed, Avg Order, Total Revenue; Cancelled, Menu Items, Available, Rating. (6) Kitchen-display Active Orders section — each card shows orderCode, item count, total, timeAgo, full items list (qty chip + name + line total), a 5-step visual timeline (Placed → Accepted → Preparing → Ready → Dispatched) with current step highlighted, and a quick-action button that's context-aware: "Accept" (PLACED), "Mark Preparing" (ACCEPTED), "Mark Ready" (PREPARING) — each toasts "Demo: would update status" since no status-update API is wired for this role. (7) Recent Orders table — desktop Table + mobile list with orderCode, status badge, items count, total, timeAgo. (8) Menu summary card listing categories with item counts + "Manage full menu" button (toast).
+- Used framer-motion stagger-children entrance animations throughout (itemVariants hidden/visible + parent variants with staggerChildren 0.06). All cards use rounded-2xl + soft shadows + p-4/p-5 spacing. Orange theme throughout (bg-primary, primary/10 tints, gradient-to-br from-primary to-orange-600 for hero cards) — NO indigo/blue. Color-coded status badges: green=DELIVERED, red=CANCELLED, primary/in-progress default. Mobile-first responsive (1 col mobile → 2-4 cols desktop). Semantic HTML + aria-labels on icon-only controls.
+- Used the "let mounted = true + .then()/.catch()" fetch pattern inside useEffect with no synchronous setState in the effect body. Retry handled via a reloadKey state counter that bumps to retrigger the effect.
+- Fixed lint: initial run flagged 3 unused eslint-disable directives + 1 react-hooks/set-state-in-effect error (from calling setLoading(true) synchronously in the effect via a fetchData helper). Refactored both files to inline the fetch in the effect body (no setState calls in the effect itself, only inside .then/.catch callbacks guarded by mounted) and added a `retry` function that bumps a reloadKey state to retrigger the effect. Removed the now-unused eslint-disable comments.
+- Final lint: `bun run lint` → 0 errors, 0 warnings. TypeScript check (`bunx tsc --noEmit`) shows zero errors in the two new files (pre-existing errors in other files remain untouched).
+
+Stage Summary:
+- Created src/components/food/rider-dashboard.tsx (777 lines) — export `RiderDashboard`. Fetches GET /api/rider/dashboard, PATCHes /api/rider/status for the online/offline toggle. Full access control, loading skeleton, error retry, orange-themed earnings card, 4-tile stats grid, active delivery cards with Track button, recent orders table.
+- Created src/components/food/restaurant-dashboard.tsx (972 lines) — export `RestaurantDashboard`. Fetches GET /api/restaurant-portal/dashboard. Full access control, loading skeleton, error retry, today's-performance orange card, two 4-tile stats rows, kitchen-display cards with 5-step timeline + context-aware quick-action buttons (demo toasts), recent orders table, menu categories summary.
+- Both components use the same framer-motion stagger animation pattern, mobile-first responsive grid, orange Swiggy-inspired theme, color-coded status badges, and the let-mounted + .then/.catch fetch pattern. Lint passes clean.
+
+---
+Task ID: RIDER+RESTAURANT LOGIN ROLES (1-8)
+Agent: Z.ai Code (orchestrator)
+Task: Create rider and restaurant login roles in menu + dedicated dashboards
+
+Work Log:
+- Added 'rider' and 'restaurant-portal' to ViewName type + page.tsx rendering.
+- Updated demo-users.ts: added `category` (admin/restaurant/delivery/customer) + `icon` to each DemoAccount. Added ROLE_CATEGORIES array + accountsByCategory helper.
+- Redesigned login-dialog.tsx: replaced flat 10-account list with 4 grouped sections — "Admin & Staff" (6 roles), "Restaurant Partners" (Owner + Staff), "Delivery Partners" (Delivery Partner), "Customer". Each section has a header with category icon + description. Each account button shows the role-specific icon (Store, ChefHat, Bike, ShieldCheck, etc.) instead of initials.
+- Added routeAfterLogin() to login-dialog: after successful OTP verify, auto-routes to the role-specific dashboard — DELIVERY_PARTNER → 'rider', RESTAURANT_OWNER/STAFF → 'restaurant-portal', admin/staff → 'admin', CUSTOMER → 'home'.
+- Updated auth-store.ts: added isRider(), isRestaurant(), defaultViewForRole() helpers. Refined isAdmin() to exclude rider/restaurant roles (so they don't see "Admin Portal").
+- Updated header.tsx: role-aware portal buttons — shows "Admin Portal" (ShieldCheck) for admin roles, "Rider Dashboard" (Bike) for delivery partners, "Restaurant Dashboard" (Store) for restaurant roles. User dropdown menu also shows the role-specific portal link.
+- Built backend APIs: GET /api/rider/dashboard (rider profile + stats: activeDeliveries, completedToday, totalCompleted, totalEarnings, deliveryEarnings, tipEarnings + activeDeliveries + recentOrders), PATCH /api/rider/status (toggle online), GET /api/restaurant-portal/dashboard (restaurant profile + stats: activeOrders, todayOrders, todayRevenue, totalRevenue, avgOrderValue, totalMenuItems, availableItems + activeOrders + recentOrders + menuCategories).
+- Delegated frontend (Task 4+5) to subagent: built rider-dashboard.tsx (777 lines) + restaurant-dashboard.tsx (972 lines).
+
+Verification (Agent Browser through Caddy gateway):
+- Login dialog shows 4 grouped categories: ADMIN & STAFF (6), RESTAURANT PARTNERS (2), DELIVERY PARTNERS (1), CUSTOMER (1) ✅
+- Logged in as Delivery Partner (Ajay Kumar) → auto-routed to Rider Dashboard ✅
+  - Header shows "Rider Dashboard" button (not Admin Portal) ✅
+  - Dashboard shows: online toggle (switched to Offline, toast confirmed), earnings card, stats grid (Active/Today/Total/Rating), active deliveries section ✅
+- Logged in as Restaurant Owner (Imran Khan) → auto-routed to Restaurant Dashboard ✅
+  - Header shows "Restaurant Dashboard" button ✅
+  - Dashboard shows: restaurant profile (5.4K ratings), Today's Revenue card, stats grid (Active/Completed/Avg Order/Total Revenue/Menu Items/Available/Rating), Active Orders kitchen display, Recent Orders, Menu Categories ✅
+- Console clean, no errors. Lint: 0 errors, 0 warnings.
+
+Stage Summary:
+- Login menu now groups 10 roles into 4 categories with role-specific icons.
+- After login, users auto-route to their role-specific dashboard (rider/restaurant/admin/home).
+- Rider Dashboard: online/offline toggle, earnings, active deliveries, recent orders.
+- Restaurant Dashboard: kitchen display, today's revenue, menu summary, order management.
+- Header is role-aware: shows the correct portal button per role.
+- Files: src/lib/demo-users.ts (updated), src/lib/auth-store.ts (updated), src/lib/types.ts (updated), src/components/food/login-dialog.tsx (updated), src/components/food/header.tsx (updated), src/app/page.tsx (updated), src/app/api/rider/dashboard/route.ts (new), src/app/api/rider/status/route.ts (new), src/app/api/restaurant-portal/dashboard/route.ts (new), src/components/food/rider-dashboard.tsx (new, subagent), src/components/food/restaurant-dashboard.tsx (new, subagent).

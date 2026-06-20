@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Search, ShoppingCart, ChevronDown, User, Receipt, Sparkles, UtensilsCrossed, LogOut, ShieldCheck, LogIn, ChevronRight } from 'lucide-react'
+import { Search, ShoppingCart, ChevronDown, User, Receipt, Sparkles, UtensilsCrossed, LogOut, ShieldCheck, LogIn, ChevronRight, Bike, Store } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -30,6 +30,8 @@ export function Header() {
   const setLoginOpen = useAuthStore((s) => s.setLoginOpen)
   const logout = useAuthStore((s) => s.logout)
   const isAdmin = useAuthStore((s) => s.isAdmin)
+  const isRider = useAuthStore((s) => s.isRider)
+  const isRestaurant = useAuthStore((s) => s.isRestaurant)
 
   const goHome = () => setView('home')
 
@@ -114,6 +116,32 @@ export function Header() {
                   <span className="sm:hidden">Admin</span>
                 </Button>
               )}
+              {/* Rider portal link */}
+              {isRider() && (
+                <Button
+                  size="sm"
+                  variant={view === 'rider' ? 'default' : 'outline'}
+                  onClick={() => setView('rider')}
+                  className="shrink-0"
+                >
+                  <Bike className="h-4 w-4" />
+                  <span className="hidden sm:inline">Rider Dashboard</span>
+                  <span className="sm:hidden">Rider</span>
+                </Button>
+              )}
+              {/* Restaurant portal link */}
+              {isRestaurant() && (
+                <Button
+                  size="sm"
+                  variant={view === 'restaurant-portal' ? 'default' : 'outline'}
+                  onClick={() => setView('restaurant-portal')}
+                  className="shrink-0"
+                >
+                  <Store className="h-4 w-4" />
+                  <span className="hidden sm:inline">Restaurant Dashboard</span>
+                  <span className="sm:hidden">Restaurant</span>
+                </Button>
+              )}
 
               {/* User menu */}
               <DropdownMenu>
@@ -155,6 +183,18 @@ export function Header() {
                   {isAdmin() && (
                     <DropdownMenuItem onClick={() => setView('admin')}>
                       <ShieldCheck className="h-4 w-4" /> Admin Portal
+                      <ChevronRight className="ml-auto h-3 w-3" />
+                    </DropdownMenuItem>
+                  )}
+                  {isRider() && (
+                    <DropdownMenuItem onClick={() => setView('rider')}>
+                      <Bike className="h-4 w-4" /> Rider Dashboard
+                      <ChevronRight className="ml-auto h-3 w-3" />
+                    </DropdownMenuItem>
+                  )}
+                  {isRestaurant() && (
+                    <DropdownMenuItem onClick={() => setView('restaurant-portal')}>
+                      <Store className="h-4 w-4" /> Restaurant Dashboard
                       <ChevronRight className="ml-auto h-3 w-3" />
                     </DropdownMenuItem>
                   )}

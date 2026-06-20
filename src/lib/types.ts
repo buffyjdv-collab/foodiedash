@@ -138,7 +138,7 @@ export interface Order {
   restaurant?: Restaurant
 }
 
-export type ViewName = 'home' | 'restaurant' | 'checkout' | 'tracking' | 'orders' | 'profile' | 'admin'
+export type ViewName = 'home' | 'restaurant' | 'checkout' | 'tracking' | 'orders' | 'profile' | 'admin' | 'rider' | 'restaurant-portal'
 
 export interface FoodCategory {
   id: string
