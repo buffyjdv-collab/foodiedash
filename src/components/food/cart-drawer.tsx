@@ -61,8 +61,10 @@ export function CartDrawer() {
 
   const handleCheckout = () => {
     if (cart.length === 0) return
-    setOpen(false)
+    // Switch view FIRST, then close the sheet — avoids the Sheet unmount
+    // swallowing the state update.
     setView('checkout')
+    setOpen(false)
   }
 
   return (

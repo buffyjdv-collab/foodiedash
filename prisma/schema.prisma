@@ -138,6 +138,8 @@ model Order {
   orderCode      String   @unique // human friendly e.g. #FD8421
   customerId     String
   customer       Customer @relation(fields: [customerId], references: [id])
+  userId         String?  // optional link to authenticated User (RBAC)
+  user           User?    @relation(fields: [userId], references: [id])
   restaurantId   String
   restaurant     Restaurant @relation(fields: [restaurantId], references: [id])
   status         String   @default("PLACED") // PLACED, ACCEPTED, PREPARING, READY, ASSIGNED, PICKED_UP, ON_ROUTE, DELIVERED, CANCELLED
@@ -222,4 +224,88 @@ model Rider {
   createdAt  DateTime @default(now())
 
   orders Order[]
+}
+
+// ---------------------------------------------------------
+// Auth & RBAC (OTP login + particle-level permissions)
+// ---------------------------------------------------------
+model User {
+  id        String   @id @default(cuid())
+  phone     String   @unique
+  email     String?
+  name      String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userRoles UserRole[]
+  sessions  Session[]
+  otpCodes  OtpCode[]
+  orders    Order[]
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique // SUPER_ADMIN, CUSTOMER, RESTAURANT_OWNER, ...
+  label       String   // human-friendly display label
+  description String
+  isSystem    Boolean  @default(true) // system roles cannot be deleted
+  createdAt   DateTime @default(now())
+
+  users       UserRole[]
+  permissions RolePermission[]
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  action      String   @unique // e.g. "restaurants.update"
+  module      String   // e.g. "restaurants"
+  label       String   // human label
+  description String
+  createdAt   DateTime @default(now())
+
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  @@id([userId, roleId])
+}
+
+model OtpCode {
+  id        String   @id @default(cuid())
+  phone     String
+  code      String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([phone])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  @@index([token])
 }

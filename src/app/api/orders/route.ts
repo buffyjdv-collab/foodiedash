@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getAuthUser, can } from '@/lib/auth'
 
 export async function GET() {
   try {
-    const customer = await db.customer.findFirst()
-    if (!customer) return NextResponse.json({ success: true, orders: [] })
+    const user = await getAuthUser()
+    // If authenticated, show their orders; otherwise fall back to the demo customer.
+    let where: any = {}
+    if (user) {
+      where.userId = user.id
+    } else {
+      const customer = await db.customer.findFirst()
+      if (!customer) return NextResponse.json({ success: true, orders: [] })
+      where.customerId = customer.id
+    }
     const orders = await db.order.findMany({
-      where: { customerId: customer.id },
+      where,
       orderBy: { createdAt: 'desc' },
       include: { items: true, restaurant: true },
     })
@@ -18,6 +27,21 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    // RBAC: placing an order requires the orders.create permission (CUSTOMER role).
+    const user = await getAuthUser()
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: 'Please log in to place an order.', statusCode: 401 },
+        { status: 401 }
+      )
+    }
+    if (!can(user, 'orders.create')) {
+      return NextResponse.json(
+        { success: false, error: 'Your role does not allow placing orders.', statusCode: 403 },
+        { status: 403 }
+      )
+    }
+
     const body = await req.json()
     const { items, restaurantId, addressLine, paymentMethod, couponCode, tip } = body as {
       items: { menuItemId: string; name: string; price: number; quantity: number; variants?: string; addons?: string; total: number }[]
@@ -28,8 +52,15 @@ export async function POST(req: NextRequest) {
       tip?: number
     }
 
-    const customer = await db.customer.findFirst()
-    if (!customer) return NextResponse.json({ success: false, error: 'No customer' }, { status: 400 })
+    // Use the demo Customer record for wallet/loyalty linkage (or create one
+    // matching the authenticated user's phone).
+    let customer = await db.customer.findFirst({ where: { phone: user.phone } })
+    if (!customer) customer = await db.customer.findFirst()
+    if (!customer) {
+      customer = await db.customer.create({
+        data: { name: user.name || 'Customer', email: user.email || `${user.phone}@foodiedash.io`, phone: user.phone },
+      })
+    }
     const restaurant = await db.restaurant.findUnique({ where: { id: restaurantId } })
     if (!restaurant) return NextResponse.json({ success: false, error: 'Restaurant not found' }, { status: 404 })
 
@@ -57,6 +88,7 @@ export async function POST(req: NextRequest) {
       data: {
         orderCode,
         customerId: customer.id,
+        userId: user.id, // RBAC link to authenticated user
         restaurantId,
         status: 'PLACED',
         itemsTotal,

@@ -99,3 +99,84 @@ Stage Summary:
 - 12 restaurants, 80+ menu items, full order lifecycle, live websocket tracking, AI-powered search + chatbot (z-ai-web-dev-sdk LLM).
 - Two running services: Next.js (port 3000) + tracking-service (port 3004), both via Caddy gateway (port 81).
 - All 11 todos completed. Browser-verified end-to-end.
+
+---
+Task ID: 8
+Agent: full-stack-developer (admin portal)
+Task: Build RBAC admin portal with particle-level permission gating
+
+Work Log:
+- Read worklog.md (prior tasks 3-c, 9, 8+10, ORCHESTRATOR), src/lib/rbac.ts (PERMISSIONS, ROLES, ADMIN_MODULES, helpers), src/lib/auth-store.ts (useAuthStore with user/roles/permissions/hasPermission/isAdmin/setLoginOpen), src/lib/store.ts (useFoodStore with setView), src/lib/format.ts (formatINR, formatCount, timeAgo, shortDate), src/lib/types.ts (Restaurant, Order, Coupon, ViewName), src/components/food/shared.tsx, src/components/food/profile.tsx (for patterns), shadcn component sources (table, dialog, tabs, badge, card, button, sheet, avatar, checkbox, label, input, separator, skeleton, scroll-area, tooltip), src/app/globals.css (orange theme OKLCH tokens, custom scrollbar .scroll-thin, .no-scrollbar), and the existing API routes for /api/admin/stats, /api/admin/users, /api/admin/roles, /api/admin/permissions, /api/restaurants, /api/orders, /api/coupons to confirm response shapes and 403 behavior.
+- Confirmed dev.log: page.tsx imports AdminPortal from @/components/food/admin-portal which didn't exist yet — was producing 500 errors.
+- Confirmed eslint config disables most rules but leaves `react-hooks/set-state-in-effect` active (the one that bit profile.tsx in task 8+10). Planned to use the React-recommended "adjust state during render" pattern for prop-synced dialog state, and `key`-based remount for refresh buttons — both avoid setState in effect bodies.
+- Built src/components/food/admin-portal.tsx (~1500 lines, single 'use client' component exporting AdminPortal):
+  * Access gates: while auth loading → skeleton; if !user → AccessDeniedCard with Sign in button (calls setLoginOpen(true)); if !isAdmin() → AccessDeniedCard "Limited access" with Back to home button (calls setView('home')); else renders PortalShell.
+  * PortalShell: sticky desktop sidebar (220px) + top bar ("Admin Portal" + role badge pills + "{N} permissions" pill) + AnimatePresence motion.div content swap. Mobile collapses sidebar into a horizontal scrollable pill bar at top (no-scrollbar). Active module derived with useMemo (falls back to first visible module when the active one disappears — no setState-in-effect).
+  * SidebarNav: lists ADMIN_MODULES filtered by canDo(user, m.permission). Hidden modules not rendered (this IS the particle-level module gating). Active module highlighted orange (bg-primary).
+  * Each module renders: ModuleHeader (icon + title + description + optional action) + ParticleScopeBanner ("You have X of Y actions in the {module} module (Z%)") + module body.
+  * Overview (always visible): fetches GET /api/admin/stats. 8 KPI cards (users, restaurants, orders, riders, revenue via formatINR, delivered, cancelled, coupons) with staggered framer-motion entrance. Two recharts BarCharts: ordersByStatus (vertical bars, orange) and usersByRole (horizontal bars, amber). Handles 403 gracefully with a friendly "Analytics access required" card. Refresh button remounts body via key={reloadToken}.
+  * Users (users.read): fetches GET /api/admin/users. shadcn Table with avatar initials, phone, email, role badges, status badge, createdAt (timeAgo). Particle-level action buttons per row: Edit roles (Dialog with role checkboxes — only if users.update), Activate/Deactivate toggle (Power icon — only if users.update, disabled for own account), Delete (trash icon — only if users.delete, disabled for own account). Add User button at top (only if users.create) opens AddUserDialog (phone, name, email, role checkboxes). All mutations hit the API and on success call onMutated() which increments reloadToken to refetch + sonner toast.
+  * Roles & Permissions (roles.read): fetches both GET /api/admin/roles and GET /api/admin/permissions in parallel. Two tabs: (a) "By Role" — card per role showing label, description, user count, permissions count, and permissions grouped by module as small badges; SUPER_ADMIN shows a Lock badge and "Immutable" note and cannot be edited; if user has roles.update, "Edit permissions" button opens EditPermissionsDialog (full checklist of all PERMISSIONS grouped by module with All/None shortcuts per module); saves via PATCH /api/admin/roles { roleName, permissions }. (b) "By Permission" — table of all permissions with action, module, label, description, and role badges.
+  * Restaurants (restaurants.read): fetches GET /api/restaurants. Table with name, cuisine, rating badge, cost for two (formatINR), delivery time, status. Particle-level: Add restaurant (restaurants.create) and per-row Edit (restaurants.update) + Delete (restaurants.delete) buttons, all toast.info("Demo: would …") since the spec said no need to build the full editor.
+  * Orders (orders.read): fetches GET /api/orders. Table with order code, restaurant name, status badge (color-coded via orderStatusColor — green/amber/orange/red, NO blue), total (formatINR), payment method, createdAt (timeAgo). Particle-level: row "Cancel" button only if orders.cancel (toast.info demo).
+  * Riders (riders.read): friendly "coming soon" card. Best-effort fetches /api/admin/stats to surface the rider count if available (403 silently ignored). Particle-level: Add rider button only if riders.create (toast.info demo).
+  * Coupons (coupons.read): fetches GET /api/coupons. Table with code (mono), description, type badge, value (percent or INR), min order, max discount. Particle-level: Add coupon (coupons.create) + per-row Edit (coupons.update) + Delete (coupons.delete) buttons, all toast.info demo.
+  * Analytics (analytics.read): two recharts charts using mock 7-day data — AreaChart for revenue trend (orange gradient fill) and BarChart for order volume (amber bars). Tooltip formats values via formatINR.
+  * Settings (settings.read): two cards — "Platform settings" (service fee, delivery radius, support SLA) and "City zones" (Bangalore/Mumbai/Delhi zone counts). Both have Edit buttons gated by settings.update (disabled if no permission; toast.info when clicked).
+  * GenericModuleShell (used for payments, settlements, campaigns, reviews, tickets): a consistent shell — ModuleHeader + ParticleScopeBanner + a centered card with the module icon, the gating-permission code shown, and particle-level Create/Edit/Delete buttons (and any other non-read actions like payments.process, settlements.process, notifications.send, tickets.resolve, reviews.moderate) — each shown ONLY if the user has that specific permission; toast.info when clicked. Footer shows "Showing X of Y particle actions".
+- Used the React "adjust state during render" pattern for EditRolesDialog and EditPermissionsDialog (prevTarget/prevRole ref + conditional setState during render) so that opening them for a different row doesn't require setState-in-effect.
+- All fetches use the let-mounted + .then/.catch pattern; setState calls happen only inside async callbacks (never synchronously in effect bodies), so the `react-hooks/set-state-in-effect` rule passes.
+- Ran `bun run lint`: 0 errors in my file (only a pre-existing unused eslint-disable warning in prisma/seed-rbac.ts remains). Had to remove one useEffect that called setActiveId synchronously — replaced with a derived `active` useMemo (falls back to first visible module when activeId is stale).
+- Ran `bunx tsc --noEmit` on the whole project: 0 errors in src/components/food/admin-portal.tsx (errors only in unrelated pre-existing files: home-view.tsx, profile.tsx, restaurant-detail.tsx, examples/, skills/).
+- Wrote agent-ctx summary at /home/z/my-project/agent-ctx/8-full-stack-developer-admin-portal.md.
+
+Stage Summary:
+- File created: /home/z/my-project/src/components/food/admin-portal.tsx (single 'use client' component, ~1500 lines, exports AdminPortal).
+- Implements full particle-level RBAC: module-level gating (hidden sidebar entries), action-level gating (hidden buttons per row), and per-module "You have X of Y actions" banner so the particle-level nature is visible.
+- Resolves the existing 500 error in dev.log (page.tsx was importing a non-existent AdminPortal).
+- 9 dedicated module components (Overview, Users, Roles, Restaurants, Orders, Riders, Coupons, Analytics, Settings) + GenericModuleShell for the remaining 5 modules.
+- Real mutations wired for Users (POST/PATCH/DELETE) and Roles (PATCH); demo toast.info for Restaurants/Orders/Coupons/Riders/Settings per the spec.
+- recharts BarChart (orders by status, users by role, order volume), AreaChart (revenue trend), shadcn Table/Dialog/Tabs/Checkbox/Badge/Avatar/Card/Button/Skeleton/Separator throughout.
+- Orange Swiggy theme throughout (bg-primary, bg-primary/10, text-primary); NO indigo/blue. Mobile-responsive (sidebar collapses to horizontal pill bar). framer-motion staggered entrance on KPI cards + AnimatePresence module swap. Loading skeletons + ErrorCard + Retry + 403 graceful handling. Accessible (aria-label on icon buttons, aria-current on active module, semantic <header>/<aside>/<nav>/<main>).
+- Lint: 0 errors. tsc: 0 errors in admin-portal.tsx. Did NOT start dev server.
+
+---
+Task ID: AUTH+RBAC (1-10)
+Agent: Z.ai Code (orchestrator)
+Task: Implement OTP-based authentication + particle-level RBAC
+
+Work Log:
+- Extended Prisma schema with 6 new models: User, Role, Permission, RolePermission, UserRole, OtpCode, Session. Added optional `userId` FK on Order to link orders to authenticated users. Pushed schema.
+- Built src/lib/rbac.ts: 56 particle-level permissions across 18 modules (users, roles, cities, restaurants, menus, orders, riders, payments, settlements, commissions, coupons, campaigns, notifications, tickets, reviews, wallets, reports, analytics, settings) + 10 roles (SUPER_ADMIN, CITY_ADMIN, FINANCE_MANAGER, OPERATIONS_MANAGER, SUPPORT_AGENT, MARKETING_MANAGER, RESTAURANT_OWNER, RESTAURANT_STAFF, DELIVERY_PARTNER, CUSTOMER) with full role→permission matrix.
+- Seeded RBAC: 56 permissions, 10 roles, 10 demo users (one per role, all OTP=123456). prisma/seed-rbac.ts.
+- Built src/lib/auth.ts: session management via httpOnly cookie (fd_session), DB-backed sessions (7-day TTL), getAuthUser(), requireAuth(), requirePermission(action), can(user, action), createSession(), destroySession(), OTP generation + phone normalization.
+- Built auth API routes: POST /api/auth/otp/send (generates 6-digit OTP, 5min expiry, rate-limited; demo accounts use fixed 123456), POST /api/auth/otp/verify (validates OTP, find-or-create user with CUSTOMER role, creates session, sets cookie), POST /api/auth/logout, GET /api/auth/me.
+- Built admin API routes (all RBAC-protected via requirePermission): GET/POST/PATCH/DELETE /api/admin/users (users.read/create/update/delete), GET/PATCH /api/admin/roles (roles.read/update), GET /api/admin/permissions (roles.read), GET /api/admin/stats (analytics.read), POST /api/admin/check (bulk permission check).
+- Applied RBAC to order placement: POST /api/orders now requires auth + `orders.create` permission (returns 401 if unauthenticated, 403 if lacking permission). Orders linked to authenticated user via userId. GET /api/orders scoped to authenticated user.
+- Built src/lib/auth-store.ts (Zustand): user/permissions state, hydrate() fetches /api/auth/me on app load, hasPermission/hasRole/isAdmin helpers, logout().
+- Built src/components/food/login-dialog.tsx: OTP login modal with phone→OTP→verify flow, one-click quick demo login for all 10 roles, 6-digit InputOTP UI, success state, auto-verify for demo accounts.
+- Updated header.tsx: auth-aware nav (Sign in button when logged out; Admin Portal link + user dropdown with avatar/role badges/sign out when logged in).
+- Updated page.tsx: hydrates auth on mount, renders LoginDialog + AdminPortal view.
+- Updated checkout-view.tsx: shows "Sign in required" banner when unauthenticated, handles 401 (opens login) and 403 (shows permission error) from order placement.
+- Delegated Admin Portal UI (Task 8) to subagent: built src/components/food/admin-portal.tsx (~1500 lines) with particle-level gating at 3 layers (module visibility, action buttons, scope banner showing "X of Y actions").
+- Fixed cart-drawer checkout transition (setView before setOpen to avoid Sheet unmount swallowing the state update).
+
+Verification (Agent Browser through Caddy gateway on port 81):
+- Home renders with "Sign in" button (logged out state) ✅
+- OTP login modal: phone input + 10 one-click demo role buttons ✅
+- Quick login as Super Admin → header shows avatar + "Super Admin" + "Admin Portal" button ✅
+- Admin Portal: 14 modules visible (Super Admin has all 56 permissions), KPI cards (10 users, 12 restaurants, 5 riders), recharts bar charts ✅
+- Users module (Super Admin): "Add user", "Edit roles", "Deactivate", "Delete" buttons all visible ✅
+- Roles & Permissions module: "By Role" tab (10 role cards with permission badges + Edit permissions dialog) + "By Permission" tab (56 permissions table) ✅
+- Logged out, logged in as Support Agent → Admin Portal shows only 5 modules (Overview, Users, Orders, Reviews, Support Tickets) + "9 permissions" badge ✅
+- Users module (Support Agent): NO action buttons (only users.read) + particle scope banner "You have 1 of 4 actions" ✅
+- API RBAC enforcement (curl): unauthenticated POST /api/orders → 401; Support Agent GET /api/admin/users → 200; Support Agent POST /api/admin/users → 403; Support Agent GET /api/admin/roles → 403; Support Agent GET /api/admin/stats → 403 ✅
+- Logged in as Customer → placed order (POST /api/orders 200) → live tracking reached DELIVERED ✅
+- No "Admin Portal" button for Customer role (not an admin) ✅
+- Console clean, no errors. Lint: 0 errors, 0 warnings.
+
+Stage Summary:
+- Complete OTP-based authentication + particle-level RBAC implemented end-to-end.
+- 10 roles, 56 fine-grained permissions, 10 demo accounts (OTP 123456).
+- Auth enforced at API layer (401/403), UI layer (hidden buttons/modules), and demonstrated via the Admin Portal with particle-level scope banners.
+- Files: prisma/schema.prisma (+6 models), prisma/seed-rbac.ts, src/lib/rbac.ts, src/lib/auth.ts, src/lib/auth-store.ts, src/lib/demo-users.ts, src/app/api/auth/* (4 routes), src/app/api/admin/* (5 routes), src/app/api/orders/route.ts (updated), src/components/food/login-dialog.tsx, src/components/food/header.tsx (updated), src/components/food/checkout-view.tsx (updated), src/components/food/cart-drawer.tsx (fixed), src/components/food/admin-portal.tsx (subagent), src/app/page.tsx (updated).

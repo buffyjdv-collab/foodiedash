@@ -6,8 +6,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Label } from '@/components/ui/label'
-import { ArrowLeft, MapPin, CreditCard, Wallet, Banknote, Smartphone, Gift, Plus, Loader2, CheckCircle2, BadgePercent, X } from 'lucide-react'
+import { ArrowLeft, MapPin, CreditCard, Wallet, Banknote, Smartphone, Gift, Plus, Loader2, CheckCircle2, BadgePercent, X, ShieldAlert, LogIn } from 'lucide-react'
 import { useFoodStore, cartItemsTotal } from '@/lib/store'
+import { useAuthStore } from '@/lib/auth-store'
 import { formatINR } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -36,6 +37,8 @@ export function CheckoutView() {
   const setView = useFoodStore((s) => s.setView)
   const addOrder = useFoodStore((s) => s.addOrder)
   const goToTracking = useFoodStore((s) => s.goToTracking)
+  const user = useAuthStore((s) => s.user)
+  const setLoginOpen = useAuthStore((s) => s.setLoginOpen)
   const setCartOpen = useFoodStore((s) => s.setCartOpen)
 
   const [addresses, setAddresses] = useState<AddressItem[]>([])
@@ -94,7 +97,18 @@ export function CheckoutView() {
         }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to place order')
+      if (!res.ok) {
+        if (res.status === 401) {
+          toast.error('Please sign in to place your order')
+          setLoginOpen(true)
+          return
+        }
+        if (res.status === 403) {
+          toast.error(data.error || 'Your role does not allow placing orders')
+          return
+        }
+        throw new Error(data.error || 'Failed to place order')
+      }
       const order = data.order as Order
       addOrder(order)
       toast.success('Order placed successfully! 🎉')
@@ -130,6 +144,23 @@ export function CheckoutView() {
       </button>
 
       <h1 className="mb-4 text-2xl font-extrabold">Checkout</h1>
+
+      {!user && (
+        <div className="mb-4 flex flex-col items-start justify-between gap-3 rounded-2xl border border-primary/40 bg-primary/5 p-4 sm:flex-row sm:items-center">
+          <div className="flex items-start gap-3">
+            <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+            <div>
+              <p className="text-sm font-bold text-foreground">Sign in required to place your order</p>
+              <p className="text-xs text-muted-foreground">
+                OTP login is enforced by RBAC — the <code className="rounded bg-muted px-1">orders.create</code> permission is needed.
+              </p>
+            </div>
+          </div>
+          <Button onClick={() => setLoginOpen(true)} className="bg-primary text-primary-foreground hover:bg-primary/90">
+            <LogIn className="h-4 w-4" /> Sign in
+          </Button>
+        </div>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
         {/* Left: address + payment */}

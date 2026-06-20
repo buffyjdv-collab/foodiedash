@@ -1,13 +1,17 @@
 'use client'
 
 import { useState } from 'react'
-import { Search, ShoppingCart, MapPin, ChevronDown, User, Receipt, Sparkles, UtensilsCrossed } from 'lucide-react'
+import { Search, ShoppingCart, MapPin, ChevronDown, User, Receipt, Sparkles, UtensilsCrossed, LogOut, ShieldCheck, LogIn, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { useFoodStore, cartCount } from '@/lib/store'
+import { useAuthStore } from '@/lib/auth-store'
 import { cn } from '@/lib/utils'
 import { AISearchDialog } from './ai-search-dialog'
+import { toast } from 'sonner'
 
 const LOCATIONS = [
   'MG Road, Bangalore',
@@ -17,6 +21,11 @@ const LOCATIONS = [
   'Whitefield, Bangalore',
   'Jayanagar, Bangalore',
 ]
+
+function initials(name: string | null | undefined): string {
+  if (!name) return 'U'
+  return name.split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
+}
 
 export function Header() {
   const [aiSearchOpen, setAiSearchOpen] = useState(false)
@@ -29,7 +38,18 @@ export function Header() {
   const view = useFoodStore((s) => s.view)
   const setView = useFoodStore((s) => s.setView)
 
+  const user = useAuthStore((s) => s.user)
+  const setLoginOpen = useAuthStore((s) => s.setLoginOpen)
+  const logout = useAuthStore((s) => s.logout)
+  const isAdmin = useAuthStore((s) => s.isAdmin)
+
   const goHome = () => setView('home')
+
+  const handleLogout = async () => {
+    await logout()
+    toast.success('Signed out')
+    setView('home')
+  }
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/80 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80">
@@ -82,10 +102,7 @@ export function Header() {
         </Sheet>
 
         {/* Mobile location (compact) */}
-        <button
-          onClick={() => setLocOpen(true)}
-          className="flex min-w-0 items-center gap-1 sm:hidden"
-        >
+        <button onClick={() => setLocOpen(true)} className="flex min-w-0 items-center gap-1 sm:hidden">
           <MapPin className="h-4 w-4 shrink-0 text-primary" />
           <span className="truncate text-xs font-semibold">{address.split(',')[0]}</span>
           <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
@@ -115,24 +132,87 @@ export function Header() {
             <Receipt className="h-4 w-4" />
             Orders
           </Button>
-          <Button
-            variant={view === 'profile' ? 'default' : 'ghost'}
-            size="icon"
-            onClick={() => setView('profile')}
-            aria-label="Profile"
-            className={view === 'profile' ? '' : 'sm:hidden'}
-          >
-            <User className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={view === 'profile' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setView('profile')}
-            className="hidden sm:flex"
-          >
-            <User className="h-4 w-4" />
-            Profile
-          </Button>
+
+          {/* Auth-aware section */}
+          {!user ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setLoginOpen(true)}
+              className="shrink-0 border-primary/40 text-primary hover:bg-primary/10 hover:text-primary"
+            >
+              <LogIn className="h-4 w-4" />
+              <span className="hidden sm:inline">Sign in</span>
+              <span className="sm:hidden">Login</span>
+            </Button>
+          ) : (
+            <>
+              {/* Admin portal link */}
+              {isAdmin() && (
+                <Button
+                  size="sm"
+                  variant={view === 'admin' ? 'default' : 'outline'}
+                  onClick={() => setView('admin')}
+                  className="shrink-0"
+                >
+                  <ShieldCheck className="h-4 w-4" />
+                  <span className="hidden sm:inline">Admin Portal</span>
+                  <span className="sm:hidden">Admin</span>
+                </Button>
+              )}
+
+              {/* User menu */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="flex items-center gap-2 rounded-full border border-border bg-card p-1 pr-2 transition hover:border-primary hover:bg-accent sm:pr-3">
+                    <Avatar className="h-7 w-7">
+                      <AvatarFallback className="bg-primary/10 text-xs font-bold text-primary">
+                        {initials(user.name)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="hidden text-left sm:block">
+                      <div className="max-w-[120px] truncate text-xs font-bold leading-tight">{user.name || 'User'}</div>
+                      <div className="text-[10px] leading-tight text-muted-foreground">
+                        {user.roleLabels?.[0] || user.roles[0]}
+                      </div>
+                    </div>
+                    <ChevronDown className="hidden h-3 w-3 text-muted-foreground sm:block" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-60">
+                  <DropdownMenuLabel className="flex flex-col gap-0.5">
+                    <span className="text-sm font-bold">{user.name || 'User'}</span>
+                    <span className="text-xs font-normal text-muted-foreground">{user.phone}</span>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {(user.roleLabels || user.roles).map((r, i) => (
+                        <Badge key={r} variant="secondary" className="text-[10px]">
+                          {r}
+                        </Badge>
+                      ))}
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setView('orders')}>
+                    <Receipt className="h-4 w-4" /> My Orders
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setView('profile')}>
+                    <User className="h-4 w-4" /> Profile & Wallet
+                  </DropdownMenuItem>
+                  {isAdmin() && (
+                    <DropdownMenuItem onClick={() => setView('admin')}>
+                      <ShieldCheck className="h-4 w-4" /> Admin Portal
+                      <ChevronRight className="ml-auto h-3 w-3" />
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
+                    <LogOut className="h-4 w-4" /> Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          )}
+
           <Button
             size="sm"
             onClick={() => setCartOpen(!cartOpen)}
