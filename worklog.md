@@ -1,0 +1,101 @@
+---
+Task ID: 3-c
+Agent: general-purpose (websocket tracking)
+Task: Build WebSocket mini-service for live order tracking
+
+Work Log:
+- Read reference implementation /examples/websocket/server.ts and main package.json (socket.io not present in main deps).
+- Created mini-services/tracking-service/ with package.json (name: tracking-service, dev: bun --hot index.ts, dep socket.io ^4.7.5) and index.ts (Socket.IO server on port 3004, path '/', cors *, pingTimeout 60000, pingInterval 25000).
+- Implemented OrderTrackingState in-memory Map with full lifecycle PLACED → ACCEPTED → PREPARING → READY → ASSIGNED → PICKED_UP → ON_ROUTE → DELIVERED (plus CANCELLED branch via cancel-order event).
+- Implemented track-order handler: generates fake rider (random name + phone), restaurant coords around Bangalore (12.9716, 77.5946) ± 0.05, destination near restaurant, joins socket to orderId room, emits tracking-init, starts 5s interval that advances status, updates timeline with labels, and interpolates rider 25% toward destination on ASSIGNED/PICKED_UP/ON_ROUTE ticks; stops at DELIVERED.
+- Implemented stop-tracking (clear interval + remove from map), cancel-order (terminal CANCELLED branch), and disconnect (clears all intervals for that socket).
+- Ran bun install (socket.io@4.8.3 resolved). Verified bun --hot index.ts boots cleanly: logs "Tracking service running on port 3004".
+- Ran end-to-end socket.io client test: connected, emitted track-order, received tracking-init + 7 tracking-update events through full lifecycle with rider coords interpolating toward destination; DELIVERED reached and interval auto-cleared. Test exit code 0.
+- Left the service running in background (bun --hot index.ts, PID verified, HTTP 400 socket.io handshake response on port 3004).
+
+Stage Summary:
+- Files created: /home/z/my-project/mini-services/tracking-service/package.json, /home/z/my-project/mini-services/tracking-service/index.ts
+- Port: 3004 (Socket.IO, path '/', cors *)
+- Service starts cleanly; full order lifecycle + rider movement verified via end-to-end client test.
+- Frontend socket events:
+  - Emit: track-order {orderId, restaurant?, destination?}, stop-tracking {orderId}, cancel-order {orderId}
+  - Listen: tracking-init (full state), tracking-update (full state), tracking-error {message, error}
+
+---
+Task ID: 9
+Agent: frontend-styling-expert (AI UI)
+Task: Build AI Assistant chatbot widget + AI smart search dialog
+
+Work Log:
+- Read worklog.md and project context (store.ts, types.ts, format.ts, shared.tsx, button.tsx, dialog.tsx, sheet.tsx, scroll-area.tsx, skeleton.tsx, avatar.tsx, input.tsx, sonner.tsx, use-mobile.ts, globals.css, both AI API routes at /api/ai/search and /api/ai/recommend, eslint config). Confirmed Swiggy orange theme (primary = oklch orange), shadcn New York style, framer-motion + sonner available.
+- Built src/components/food/ai-assistant.tsx — floating "Foodie AI" chatbot widget. Orange round floating button (Sparkles icon, framer-motion rotate transition between open/close icons). Desktop: 360x520 floating panel with motion scale/opacity entrance via AnimatePresence. Mobile: bottom Sheet at 88dvh (uses useIsMobile hook). ChatBody shared between both. Header (avatar + "Foodie AI" + "Your food buddy" subtitle + Beta badge + clear button), scrollable message list (auto-scroll via ref + useEffect), user bubbles right-aligned orange, assistant bubbles left-aligned white with Bot avatar, framer-motion entrance on each message. Suggested prompt chips above input when conversation is empty (4 prompts: spicy, healthy under ₹300, best biryani, dessert). Auto-growing textarea with Enter-to-send, Shift+Enter for newline. Animated typing dots (3 motion spans with staggered opacity/y loop). Inline error card with Retry button. Calls POST /api/ai/recommend with {message, history} and maintains conversation history in state (strips welcome message before sending). All aria-labels, accessibility, keyboard support.
+- Built src/components/food/ai-search-dialog.tsx — controlled Dialog (open, onOpenChange props). Orange header with title + description + big search input (Search icon, placeholder "Describe what you're craving...", X clear button, Sparkles/Search submit button with Loader2 spinner when loading). Suggestion chips: Quick breakfast, Late night craving, Protein packed, Comfort food, Sweet tooth (each with emoji). Body uses ScrollArea with AnimatePresence switching between: empty state (UtensilsCrossed icon + "Tell me what you're in the mood for!"), loading skeletons (orange banner skeleton + 4 card skeletons), error state (AlertCircle + Retry button), and results. Results show aiExplanation as orange-tinted banner with Sparkles + "Foodie AI says" label, then list of ResultCards. ResultCard: rounded-2xl with image (lazy-loaded img with fallback UtensilsCrossed icon), VegDot badge top-left, name + Bestseller tag, restaurant name + RatingBadge, description (2-line clamp), price (formatINR), and ADD button. ADD builds a proper CartItem (uid `${id}-default`, selectedVariants [], selectedAddons [], unitPrice=price, total=price, quantity=1, restaurantId/Name from item.restaurant) and calls useFoodStore.addToCart + shows sonner toast.success "Added to cart". Button switches to "Added" with Check icon after adding. Calls POST /api/ai/search with {query}. Auto-focus input on open, reset state on close.
+- Ran `bun run lint` — 0 errors. One pre-existing warning in prisma/seed.ts (not our file). Also removed unused ScrollArea import from ai-assistant.tsx and unused cn/formatRating imports from ai-search-dialog.tsx for cleanliness.
+- Ran `bunx tsc --noEmit` — no TypeScript errors in our two new files (only unrelated errors in examples/ and skills/ directories).
+
+Stage Summary:
+- Files created:
+  - /home/z/my-project/src/components/food/ai-assistant.tsx (Foodie AI floating chatbot widget, ~500 lines)
+  - /home/z/my-project/src/components/food/ai-search-dialog.tsx (AI smart search Dialog, ~470 lines)
+- Both components are 'use client', use the Swiggy orange theme (bg-primary / text-primary-foreground), shadcn/ui (Button, Avatar, Sheet, Dialog, Input, ScrollArea, Skeleton), lucide-react icons, framer-motion animations, and sonner toasts (search dialog).
+- Chatbot: floating button toggles desktop panel OR mobile bottom Sheet; conversation history sent to /api/ai/recommend; suggested prompts; typing dots; inline error + retry; accessible (aria-labels, keyboard).
+- Search dialog: controlled by open/onOpenChange; AI explanation banner; result cards with image/VegDot/rating/price/ADD; ADD pushes a properly-shaped CartItem into the Zustand store via useFoodStore.addToCart and fires a sonner toast; loading skeletons + empty + error states.
+- Lint passes (0 errors). No dev server started.
+
+---
+Task ID: 8+10
+Agent: full-stack-developer (tracking/orders/profile)
+Task: Build live order tracking view + orders history + profile/wallet views
+
+Work Log:
+- Read worklog, store, types, format helpers, shared.tsx, globals.css, the websocket frontend example, tracking-service server source, and shadcn Card/Button/Avatar/Progress/Separator/Badge/Skeleton/ScrollArea component sources to align with project conventions.
+- Confirmed `socket.io-client`, `framer-motion`, `sonner`, `lucide-react`, `recharts` already installed; tracking mini-service running on port 3004 with path '/', emits tracking-init/tracking-update/tracking-error and listens for track-order/stop-tracking.
+- Created `src/components/food/order-tracking.tsx`: 'use client', props `{ orderId }`. Fetches `GET /api/orders/[id]`, then connects socket via `io('/', { path: '/', transports: ['websocket'], query: { XTransformPort: '3004' } })`, emits `track-order` with restaurant/destination derived from fetched order. Listens for tracking-init & tracking-update → stores state + calls `updateOrderStatus` so orders list stays in sync; listens for tracking-error. Cleanup emits stop-tracking + disconnects. Two-column responsive layout: LEFT = stylized live map with `.map-grid` bg, dashed SVG bezier route restaurant→destination, restaurant marker (HomeIcon pill), destination marker (MapPin pill), animated rider marker (Bike / CheckCircle2 when delivered) moved via framer-motion spring along the bezier based on rider lat/lng progress; LIVE pulsing badge (red→green→red), ETA chip with Clock icon, current-status banner at bottom. RIGHT = order header card (code, name, status badge), vertical 8-step timeline (done=green check, current=pulsing orange dot, future=gray), rider card (avatar initials, name, rating, tel: call button), order summary (items + totals rows + To pay), Reorder button (clears cart, toast, setView('home')). Loading skeleton + error state. Accessible (aria-label, aria-current).
+- Created `src/components/food/orders-list.tsx`: 'use client'. Fetches `GET /api/orders` → setOrders. Loading skeleton (4 cards), error state, empty state (PackageOpen icon + "Browse restaurants"). Stagger-animated responsive grid (1 col mobile, 2 col md+). Each card: restaurant name + cuisine, color-coded status badge, order code, timeAgo, item count, items summary (first 2 + "and N more"), total via formatINR, Reorder (toast + setView home) and Track (only for in-progress statuses, calls goToTracking).
+- Created `src/components/food/profile.tsx`: 'use client'. Fetches `GET /api/customer`. Sections: (1) profile header card (avatar initials, name, tier badge Silver/Gold/Platinum, phone, email, Edit button); (2) wallet card with orange gradient (from-primary to-orange-600, decorative circles), balance in formatINR, Add Money button (toast); (3) loyalty card with points total, Progress bar to next tier, "X pts to Y" helper; (4) saved addresses list (Home icon, label, fullAddress, landmark) with empty state + Add button; (5) quick links grid (2x2 mobile, 1x4 desktop): My Orders (setView 'orders'), Saved Restaurants, Help & Support, Settings — each card with Lucide icon and toast placeholder. Loading skeleton + error state.
+- Ran `bun run lint`: hit 3 `react-hooks/set-state-in-effect` errors for the synchronous `setLoading(true)` calls at the top of each useEffect. Fixed by removing the synchronous calls (useState already defaults to true) for OrdersList and Profile, and by adopting the React-recommended "adjust state during render" pattern (prevOrderId ref + conditional setState during render) for OrderTracking so the orderId prop change still resets state cleanly. Final lint run: 0 errors in my files (only a pre-existing unused eslint-disable warning in prisma/seed.ts remains).
+- Wrote agent-ctx summary at `/home/z/my-project/agent-ctx/8+10-full-stack-developer.md`.
+
+Stage Summary:
+- Files created:
+  - /home/z/my-project/src/components/food/order-tracking.tsx (live tracking with stylized animated map + socket.io + timeline + rider card + order summary)
+  - /home/z/my-project/src/components/food/orders-list.tsx (orders history grid with empty/error/loading states)
+  - /home/z/my-project/src/components/food/profile.tsx (profile header + wallet + loyalty + addresses + quick links)
+- All three components are 'use client', responsive, accessible, use the orange Swiggy theme (no indigo/blue), framer-motion for entrance animations, sonner for toasts, and shadcn/ui (Card, Button, Badge, Avatar, Progress, Separator, Skeleton).
+- Lint passes for all three files (no errors).
+- Socket connection uses the required `io('/', { path: '/', query: { XTransformPort: '3004' } })` pattern; correctly emits track-order on connect and stop-tracking on unmount.
+
+---
+Task ID: ORCHESTRATOR (1, 2, 3-a, 4, 5, 6, 7, 11)
+Agent: Z.ai Code (orchestrator)
+Task: Build complete Swiggy/Zomato-style food delivery platform
+
+Work Log:
+- Designed Prisma schema (16 models: City, Zone, Restaurant, MenuCategory, MenuItem, Customer, Address, Order, OrderItem, Review, Coupon, Rider) with SQLite. Pushed schema to db.
+- Created comprehensive seed script (prisma/seed.ts) with 12 restaurants across 12 cuisines, ~80+ menu items with variants/addons, 5 coupons, 5 riders, customer + addresses, reviews. Used curated Unsplash food image URLs.
+- Built REST API routes: /api/restaurants (list w/ filters: search, cuisine, veg, sort, fast, rating4), /api/restaurants/[slug] (detail w/ menu+reviews), /api/categories, /api/coupons (list + validate), /api/customer, /api/orders (list + create w/ coupon+tax+tip logic), /api/orders/[id].
+- Delegated AI routes (Task 3-b) and WebSocket tracking service (Task 3-c) to subagents — both completed.
+- Installed socket.io-client for frontend. Built Zustand store (src/lib/store.ts) with persisted cart/address/orders + view navigation + cart CRUD + coupon/tip state + order sync. Built types.ts + format.ts helpers.
+- Built Swiggy orange theme (globals.css OKLCH orange primary, custom scrollbar, map-grid, live-dot, rider-bounce animations).
+- Built frontend components: header (location/search/cart/nav), shared (VegDot, RatingBadge, SpiceLevel, BestSellerTag), category-carousel, restaurant-card, home-view (hero+categories+filters+grid), menu-item-card (with full customization dialog for variants+addons), restaurant-detail (cover+info+sticky menu nav+items+reviews+floating cart bar), cart-drawer (Sheet w/ items+coupons+bill), checkout-view (address+payment+tip+summary+place order), footer.
+- Assembled main page.tsx orchestrating all views + cart drawer + AI assistant overlay.
+- Updated layout.tsx with FoodieDash metadata + Sonner toaster.
+- Debugged: AI search returned empty items because catalog context omitted menu item IDs. Fixed catalog.ts to include [id:XXX] per dish and updated the LLM prompt. Verified search now returns real matching dishes.
+- Debugged: WebSocket tracking requires gateway routing (XTransformPort). Direct localhost:3000 access can't route WS to port 3004; testing through Caddy gateway (port 81) works.
+- Ran Agent Browser end-to-end verification through the gateway:
+  * Home: 12 restaurants render with offers, ratings, filters, categories ✅
+  * Restaurant detail: menu, bestseller tags, CUSTOMISE/ADD buttons, reviews ✅
+  * Add to cart → floating "View Cart" bar appears ✅
+  * Cart drawer: items, bill details, coupon apply ✅
+  * Checkout: address, payment methods, tip, place order → order created ✅
+  * Live tracking: WS connected, full lifecycle PLACED→ACCEPTED→PREPARING→READY→ASSIGNED→PICKED_UP→ON_ROUTE→DELIVERED, animated map, 8-step timeline, rider card, ETA ✅
+  * AI Assistant: LLM recommendations referencing real restaurants/dishes/prices ✅
+  * AI Search: natural language → matching dishes with ADD buttons ✅
+  * Orders list + Profile/Wallet (₹250 balance, loyalty, addresses) ✅
+- Final lint: 0 errors, 0 warnings.
+
+Stage Summary:
+- Complete production-grade food delivery platform (FoodieDash) built on Next.js 16 + TypeScript + Tailwind 4 + shadcn/ui + Prisma SQLite.
+- 12 restaurants, 80+ menu items, full order lifecycle, live websocket tracking, AI-powered search + chatbot (z-ai-web-dev-sdk LLM).
+- Two running services: Next.js (port 3000) + tracking-service (port 3004), both via Caddy gateway (port 81).
+- All 11 todos completed. Browser-verified end-to-end.

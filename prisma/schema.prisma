@@ -1,0 +1,225 @@
+// Swiggy-clone food delivery platform schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------
+// Geo
+// ---------------------------------------------------------
+model City {
+  id        String  @id @default(cuid())
+  name      String
+  state     String
+  isActive  Boolean @default(true)
+  createdAt DateTime @default(now())
+
+  restaurants Restaurant[]
+  zones       Zone[]
+}
+
+model Zone {
+  id        String  @id @default(cuid())
+  name      String
+  cityId    String
+  city      City    @relation(fields: [cityId], references: [id])
+  isActive  Boolean @default(true)
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------
+// Restaurants & Menu
+// ---------------------------------------------------------
+model Restaurant {
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  description   String
+  cuisine       String // comma separated e.g. "North Indian,Chinese"
+  imageUrl      String
+  coverUrl      String?
+  rating        Float    @default(4.0)
+  ratingCount   Int      @default(0)
+  costForTwo    Int      @default(300)
+  deliveryTime  Int      @default(30) // minutes
+  deliveryFee   Int      @default(20) // in rupees
+  priceLevel    Int      @default(1) // 1=₹,2=₹₹,3=₹₹₹
+  isPureVeg     Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  isPromoted    Boolean  @default(false)
+  offer         String? // e.g. "50% OFF up to ₹100"
+  cityId        String
+  city          City     @relation(fields: [cityId], references: [id])
+  address       String
+  latitude      Float?
+  longitude     Float?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  menuCategories MenuCategory[]
+  reviews        Review[]
+  orders         Order[]
+}
+
+model MenuCategory {
+  id            String   @id @default(cuid())
+  name          String
+  restaurantId  String
+  restaurant    Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  displayOrder  Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  items MenuItem[]
+}
+
+model MenuItem {
+  id             String   @id @default(cuid())
+  name           String
+  description    String
+  price          Int // in rupees
+  imageUrl       String?
+  isVeg          Boolean  @default(true)
+  isBestSeller   Boolean  @default(false)
+  isRecommended  Boolean  @default(false)
+  spiceLevel     Int      @default(0) // 0,1,2,3
+  rating         Float    @default(4.2)
+  ratingCount    Int      @default(0)
+  // JSON string for variants: [{ "name":"Size","options":[{"name":"Regular","price":0},{"name":"Large","price":60}] }]
+  variants       String?
+  // JSON string for addons: [{ "name":"Extra Cheese","price":30 }, ...]
+  addons         String?
+  isAvailable    Boolean  @default(true)
+  menuCategoryId String
+  menuCategory   MenuCategory @relation(fields: [menuCategoryId], references: [id], onDelete: Cascade)
+  restaurantId   String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// ---------------------------------------------------------
+// Customers
+// ---------------------------------------------------------
+model Customer {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  phone        String   @unique
+  walletBalance Int     @default(0)
+  loyaltyPoints Int     @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  addresses Address[]
+  orders    Order[]
+  reviews   Review[]
+}
+
+model Address {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  label      String // Home, Work, Other
+  fullAddress String
+  landmark   String?
+  latitude   Float?
+  longitude  Float?
+  createdAt  DateTime @default(now())
+}
+
+// ---------------------------------------------------------
+// Orders
+// ---------------------------------------------------------
+model Order {
+  id             String   @id @default(cuid())
+  orderCode      String   @unique // human friendly e.g. #FD8421
+  customerId     String
+  customer       Customer @relation(fields: [customerId], references: [id])
+  restaurantId   String
+  restaurant     Restaurant @relation(fields: [restaurantId], references: [id])
+  status         String   @default("PLACED") // PLACED, ACCEPTED, PREPARING, READY, ASSIGNED, PICKED_UP, ON_ROUTE, DELIVERED, CANCELLED
+  itemsTotal     Int
+  deliveryFee    Int
+  taxes          Int
+  discount       Int      @default(0)
+  tip            Int      @default(0)
+  total          Int
+  paymentMethod  String   @default("UPI") // UPI, CARD, WALLET, COD
+  paymentStatus  String   @default("PAID") // PAID, PENDING, REFUNDED
+  addressLine    String
+  couponCode     String?
+  deliveryTime   Int // estimated minutes
+  riderId        String?
+  rider          Rider?   @relation(fields: [riderId], references: [id])
+  riderName      String?
+  riderPhone     String?
+  riderLat       Float?
+  riderLng       Float?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  items OrderItem[]
+}
+
+model OrderItem {
+  id          String @id @default(cuid())
+  orderId     String
+  order       Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId  String
+  name        String
+  price       Int
+  quantity    Int
+  variants    String? // JSON of selected variants
+  addons      String? // JSON of selected addons
+  total       Int
+}
+
+// ---------------------------------------------------------
+// Reviews
+// ---------------------------------------------------------
+model Review {
+  id           String   @id @default(cuid())
+  customerId   String
+  customer     Customer @relation(fields: [customerId], references: [id])
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  rating       Int // 1-5
+  comment      String
+  dish         String?
+  createdAt    DateTime @default(now())
+}
+
+// ---------------------------------------------------------
+// Coupons & Marketing
+// ---------------------------------------------------------
+model Coupon {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  description String
+  type        String // PERCENTAGE, FLAT
+  value       Int
+  maxDiscount Int?
+  minOrder    Int      @default(0)
+  isActive    Boolean  @default(true)
+  usageCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+// ---------------------------------------------------------
+// Riders
+// ---------------------------------------------------------
+model Rider {
+  id         String   @id @default(cuid())
+  name       String
+  phone      String   @unique
+  vehicle    String   @default("Bike")
+  rating     Float    @default(4.8)
+  totalDeliveries Int  @default(0)
+  isOnline   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  orders Order[]
+}
