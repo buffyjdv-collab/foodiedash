@@ -22,6 +22,7 @@ export interface Restaurant {
   address: string
   latitude: number | null
   longitude: number | null
+  distance?: number | null // km from user location (computed by /api/restaurants when lat/lng provided)
 }
 
 export interface MenuItem {

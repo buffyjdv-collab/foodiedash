@@ -3,6 +3,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { CartItem, ViewName, Order, Restaurant } from './types'
+import type { UserLocation } from './geo'
 
 interface FoodState {
   // navigation
@@ -14,6 +15,12 @@ interface FoodState {
   openRestaurant: (slug: string) => void
   goToTracking: (orderId: string) => void
   setAddress: (a: string) => void
+
+  // user location (GPS precision)
+  userLocation: UserLocation | null
+  setUserLocation: (loc: UserLocation | null) => void
+  locating: boolean
+  setLocating: (b: boolean) => void
 
   // cart
   cart: CartItem[]
@@ -59,6 +66,11 @@ export const useFoodStore = create<FoodState>()(
       openRestaurant: (slug) => set({ selectedRestaurantSlug: slug, view: 'restaurant' }),
       goToTracking: (orderId) => set({ activeOrderId: orderId, view: 'tracking' }),
       setAddress: (a) => set({ address: a }),
+
+      userLocation: null,
+      setUserLocation: (loc) => set({ userLocation: loc }),
+      locating: false,
+      setLocating: (b) => set({ locating: b }),
 
       cart: [],
       cartRestaurantId: null,
@@ -154,6 +166,7 @@ export const useFoodStore = create<FoodState>()(
         address: state.address,
         orders: state.orders,
         tip: state.tip,
+        userLocation: state.userLocation,
       }),
     }
   )

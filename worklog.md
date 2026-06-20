@@ -180,3 +180,38 @@ Stage Summary:
 - 10 roles, 56 fine-grained permissions, 10 demo accounts (OTP 123456).
 - Auth enforced at API layer (401/403), UI layer (hidden buttons/modules), and demonstrated via the Admin Portal with particle-level scope banners.
 - Files: prisma/schema.prisma (+6 models), prisma/seed-rbac.ts, src/lib/rbac.ts, src/lib/auth.ts, src/lib/auth-store.ts, src/lib/demo-users.ts, src/app/api/auth/* (4 routes), src/app/api/admin/* (5 routes), src/app/api/orders/route.ts (updated), src/components/food/login-dialog.tsx, src/components/food/header.tsx (updated), src/components/food/checkout-view.tsx (updated), src/components/food/cart-drawer.tsx (fixed), src/components/food/admin-portal.tsx (subagent), src/app/page.tsx (updated).
+
+---
+Task ID: GEOLOCATION (1-8)
+Agent: Z.ai Code (orchestrator)
+Task: Implement GPS-based current location detection + nearby restaurants in Hyderabad
+
+Work Log:
+- Built src/lib/geo.ts: Haversine great-circle distance (km), formatDistance/formatCoords/formatAccuracy helpers, nearestAreaLabel (reverse-geocodes a coordinate to "Near <Area>, <City>" using known HY/BLR neighbourhoods), isInHyderabad/isInBangalore helpers.
+- Wrote prisma/seed-hyderabad.ts (additive — does NOT touch existing data): created Hyderabad city + 8 zones + 8 restaurants with real HY coordinates (Banjara Hills, Jubilee Hills, Gachibowli, Hitech City, Madhapur, Kondapur, Secunderabad, Charminar). Restaurants include Paradise Food Court, Ohri's Jiva, Pizza Den, Burger King Madhapur, Chutneys Gachibowli, Mainland China, Healthy Bites, Shah Gouse Cafe. Also backfilled lat/lng for existing Bangalore restaurants. Ran it: 8 HY restaurants added, 20 total.
+- Updated src/app/api/restaurants/route.ts: accepts lat/lng/radius/city query params. When lat+lng provided, computes haversine distance for each restaurant, filters by radius (default 15km), includes `distance` field in response, and supports sort=distance (sorts by distance ascending). Restaurants without coords are excluded from distance sort but kept in results.
+- Added userLocation state to Zustand store (src/lib/store.ts): userLocation: UserLocation | null, setUserLocation, locating, setLocating. Persisted to localStorage. UserLocation = {lat, lng, label, accuracy?, source: 'gps'|'manual'|'simulated', detectedAt}.
+- Added `distance?: number | null` to Restaurant type.
+- Built src/components/food/location-selector.tsx: LocationSelector (Sheet with "Use my current location" GPS button using navigator.geolocation.getCurrentPosition with enableHighAccuracy:true, timeout 15s; plus manual city pickers for 6 Hyderabad areas + 6 Bangalore areas with real coordinates). Shows current detected location card (label, coords, accuracy, source). MobileLocationButton compact variant. GPS errors handled (permission denied, unavailable, timeout) with friendly toasts.
+- Updated src/components/food/header.tsx: replaced inline location Sheet with the new LocationSelector component (both desktop and mobile).
+- Updated src/components/food/restaurant-card.tsx: distance badge on image ("0 M AWAY", "3.6 KM AWAY") + "X km from you" text under cuisine. Promoted badge shifts right when distance badge present.
+- Rewrote src/components/food/home-view.tsx: location banner (green when Hyderabad, shows label + coords + accuracy + "Showing N restaurants within 15 km, sorted by distance"), auto-switches sort to "Nearest first (GPS)" when location detected (using React "adjust state during render" pattern), "Nearby restaurants (N within 15 km)" section showing only restaurants within radius, distance-sorted. Remaining restaurants shown in "More restaurants" section. Sort dropdown gains "Nearest first (GPS)" option when location is set. Hero banner copy adapts ("Hyderabad, your food is here." when in HY). Passes lat/lng/radius to /api/restaurants.
+
+Verification (Agent Browser through Caddy gateway):
+- Home loads with location selector showing "Change location" ✅
+- Opened location sheet: "Use my current location" (GPS) button + Hyderabad (Banjara Hills, Gachibowli, Hitech City, Madhapur, Secunderabad, Charminar) + Bangalore area pickers ✅
+- Picked "Banjara Hills, Hyderabad" → location banner shows "Banjara Hills, Hyderabad" + coords + "Showing 8 restaurants within 15 km, sorted by distance" ✅
+- Sort auto-switched to "Nearest first (GPS)" ✅
+- "Nearby restaurants (8 within 15 km)" section rendered, sorted by distance ✅
+- Distance badges on cards: Ohri's Jiva "0 M AWAY" (same location), Mainland China "3.6 KM AWAY", Burger King "6.5 KM AWAY", Shah Ghouse "6.8 KM AWAY" ✅
+- "X km from you" text under each restaurant name ✅
+- API verified: GET /api/restaurants?lat=17.4126&lng=78.4396&radius=15&sort=distance → 200, returns 8 HY restaurants sorted 0→10km ✅
+- GPS "Use my current location" button triggers navigator.geolocation (headless browser geolocation may not return HY, but the API + error handling is wired) ✅
+- Console clean, no errors. Lint: 0 errors, 0 warnings.
+
+Stage Summary:
+- Real GPS-based geolocation detection implemented (navigator.geolocation, high accuracy).
+- Particle-distance: Haversine great-circle distance computed server-side per restaurant.
+- Hyderabad seeded with 8 real restaurants across 8 neighbourhoods (Banjara Hills, Jubilee Hills, Gachibowli, Hitech City, Madhapur, Kondapur, Secunderabad, Charminar).
+- Nearby restaurants shown sorted by precise distance with km/m badges.
+- Files: src/lib/geo.ts, prisma/seed-hyderabad.ts, src/app/api/restaurants/route.ts (updated), src/lib/store.ts (updated), src/lib/types.ts (updated), src/components/food/location-selector.tsx, src/components/food/header.tsx (updated), src/components/food/restaurant-card.tsx (updated), src/components/food/home-view.tsx (rewritten).

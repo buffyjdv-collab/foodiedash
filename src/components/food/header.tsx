@@ -1,26 +1,17 @@
 'use client'
 
 import { useState } from 'react'
-import { Search, ShoppingCart, MapPin, ChevronDown, User, Receipt, Sparkles, UtensilsCrossed, LogOut, ShieldCheck, LogIn, ChevronRight } from 'lucide-react'
+import { Search, ShoppingCart, ChevronDown, User, Receipt, Sparkles, UtensilsCrossed, LogOut, ShieldCheck, LogIn, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { useFoodStore, cartCount } from '@/lib/store'
 import { useAuthStore } from '@/lib/auth-store'
 import { cn } from '@/lib/utils'
 import { AISearchDialog } from './ai-search-dialog'
+import { LocationSelector, MobileLocationButton } from './location-selector'
 import { toast } from 'sonner'
-
-const LOCATIONS = [
-  'MG Road, Bangalore',
-  'Indiranagar, Bangalore',
-  'Koramangala, Bangalore',
-  'HSR Layout, Bangalore',
-  'Whitefield, Bangalore',
-  'Jayanagar, Bangalore',
-]
 
 function initials(name: string | null | undefined): string {
   if (!name) return 'U'
@@ -29,12 +20,9 @@ function initials(name: string | null | undefined): string {
 
 export function Header() {
   const [aiSearchOpen, setAiSearchOpen] = useState(false)
-  const [locOpen, setLocOpen] = useState(false)
   const count = useFoodStore(cartCount)
   const cartOpen = useFoodStore((s) => s.cartOpen)
   const setCartOpen = useFoodStore((s) => s.setCartOpen)
-  const address = useFoodStore((s) => s.address)
-  const setAddress = useFoodStore((s) => s.setAddress)
   const view = useFoodStore((s) => s.view)
   const setView = useFoodStore((s) => s.setView)
 
@@ -64,49 +52,15 @@ export function Header() {
           </span>
         </button>
 
-        {/* Location selector */}
-        <Sheet open={locOpen} onOpenChange={setLocOpen}>
-          <SheetTrigger asChild>
-            <button className="group hidden min-w-0 items-center gap-1.5 border-l border-border pl-3 sm:flex">
-              <MapPin className="h-4 w-4 shrink-0 text-primary" />
-              <span className="truncate text-sm font-semibold text-foreground">{address}</span>
-              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition group-hover:translate-y-0.5" />
-            </button>
-          </SheetTrigger>
-          <SheetContent side="left" className="w-[320px]">
-            <SheetHeader className="p-5 pb-2">
-              <SheetTitle className="text-lg font-bold">Choose your location</SheetTitle>
-              <SheetDescription className="text-sm text-muted-foreground">Select a delivery area to see restaurants near you</SheetDescription>
-            </SheetHeader>
-            <div className="px-5 pb-5">
-              <div className="space-y-2">
-                {LOCATIONS.map((loc) => (
-                  <button
-                    key={loc}
-                    onClick={() => {
-                      setAddress(loc)
-                      setLocOpen(false)
-                    }}
-                    className={cn(
-                      'flex w-full items-center gap-3 rounded-xl border p-3 text-left text-sm transition hover:border-primary hover:bg-accent',
-                      loc === address && 'border-primary bg-accent'
-                    )}
-                  >
-                    <MapPin className="h-4 w-4 text-primary" />
-                    <span className="font-medium">{loc}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </SheetContent>
-        </Sheet>
+        {/* Location selector (desktop Sheet) */}
+        <div className="hidden min-w-0 border-l border-border pl-3 sm:block">
+          <LocationSelector />
+        </div>
 
-        {/* Mobile location (compact) */}
-        <button onClick={() => setLocOpen(true)} className="flex min-w-0 items-center gap-1 sm:hidden">
-          <MapPin className="h-4 w-4 shrink-0 text-primary" />
-          <span className="truncate text-xs font-semibold">{address.split(',')[0]}</span>
-          <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
-        </button>
+        {/* Mobile location (compact, opens sheet via its own trigger) */}
+        <div className="min-w-0 sm:hidden">
+          <LocationSelector />
+        </div>
 
         {/* Search (AI) */}
         <button

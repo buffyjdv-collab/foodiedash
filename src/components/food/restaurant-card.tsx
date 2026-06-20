@@ -1,13 +1,15 @@
 'use client'
 
-import { Star, Clock, IndianRupee, BadgePercent } from 'lucide-react'
+import { Star, Clock, IndianRupee, BadgePercent, MapPin, Navigation } from 'lucide-react'
 import { Restaurant } from '@/lib/types'
 import { useFoodStore } from '@/lib/store'
 import { formatRating, formatCount, priceLevelLabel, formatINR } from '@/lib/format'
+import { formatDistance } from '@/lib/geo'
 import { cn } from '@/lib/utils'
 
 export function RestaurantCard({ restaurant, index = 0 }: { restaurant: Restaurant; index?: number }) {
   const openRestaurant = useFoodStore((s) => s.openRestaurant)
+  const hasDistance = restaurant.distance != null && restaurant.distance >= 0
 
   return (
     <button
@@ -26,16 +28,27 @@ export function RestaurantCard({ restaurant, index = 0 }: { restaurant: Restaura
         {/* gradient overlay */}
         <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/70 to-transparent" />
 
-        {/* Promoted badge */}
+        {/* Distance badge (precision GPS) */}
+        {hasDistance && (
+          <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-md bg-primary px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary-foreground shadow-sm backdrop-blur">
+            <Navigation className="h-3 w-3" />
+            {formatDistance(restaurant.distance!)} away
+          </span>
+        )}
+
+        {/* Promoted badge (shifts right if distance badge present) */}
         {restaurant.isPromoted && (
-          <span className="absolute left-2 top-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white backdrop-blur">
+          <span className={cn(
+            'absolute top-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white backdrop-blur',
+            hasDistance ? 'right-2' : 'left-2'
+          )}>
             Promoted
           </span>
         )}
 
         {/* Pure Veg badge */}
         {restaurant.isPureVeg && (
-          <span className="absolute right-2 top-2 rounded-md bg-green-600/90 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white backdrop-blur">
+          <span className="absolute bottom-2 right-2 rounded-md bg-green-600/90 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white backdrop-blur">
             Pure Veg
           </span>
         )}
@@ -67,6 +80,13 @@ export function RestaurantCard({ restaurant, index = 0 }: { restaurant: Restaura
         </div>
 
         <p className="line-clamp-1 text-sm text-muted-foreground">{restaurant.cuisine.split(',').join(' • ')}</p>
+
+        {hasDistance && (
+          <p className="flex items-center gap-1 text-xs text-primary">
+            <MapPin className="h-3 w-3" />
+            {formatDistance(restaurant.distance!)} from you
+          </p>
+        )}
 
         <div className="mt-2 flex items-center justify-between border-t border-dashed border-border pt-2 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1 font-medium text-foreground">
