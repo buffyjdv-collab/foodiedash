@@ -1,0 +1,218 @@
+     1→---
+     2→Task ID: 3-c
+     3→Agent: general-purpose (websocket tracking)
+     4→Task: Build WebSocket mini-service for live order tracking
+     5→
+     6→Work Log:
+     7→- Read reference implementation /examples/websocket/server.ts and main package.json (socket.io not present in main deps).
+     8→- Created mini-services/tracking-service/ with package.json (name: tracking-service, dev: bun --hot index.ts, dep socket.io ^4.7.5) and index.ts (Socket.IO server on port 3004, path '/', cors *, pingTimeout 60000, pingInterval 25000).
+     9→- Implemented OrderTrackingState in-memory Map with full lifecycle PLACED → ACCEPTED → PREPARING → READY → ASSIGNED → PICKED_UP → ON_ROUTE → DELIVERED (plus CANCELLED branch via cancel-order event).
+    10→- Implemented track-order handler: generates fake rider (random name + phone), restaurant coords around Bangalore (12.9716, 77.5946) ± 0.05, destination near restaurant, joins socket to orderId room, emits tracking-init, starts 5s interval that advances status, updates timeline with labels, and interpolates rider 25% toward destination on ASSIGNED/PICKED_UP/ON_ROUTE ticks; stops at DELIVERED.
+    11→- Implemented stop-tracking (clear interval + remove from map), cancel-order (terminal CANCELLED branch), and disconnect (clears all intervals for that socket).
+    12→- Ran bun install (socket.io@4.8.3 resolved). Verified bun --hot index.ts boots cleanly: logs "Tracking service running on port 3004".
+    13→- Ran end-to-end socket.io client test: connected, emitted track-order, received tracking-init + 7 tracking-update events through full lifecycle with rider coords interpolating toward destination; DELIVERED reached and interval auto-cleared. Test exit code 0.
+    14→- Left the service running in background (bun --hot index.ts, PID verified, HTTP 400 socket.io handshake response on port 3004).
+    15→
+    16→Stage Summary:
+    17→- Files created: /home/z/my-project/mini-services/tracking-service/package.json, /home/z/my-project/mini-services/tracking-service/index.ts
+    18→- Port: 3004 (Socket.IO, path '/', cors *)
+    19→- Service starts cleanly; full order lifecycle + rider movement verified via end-to-end client test.
+    20→- Frontend socket events:
+    21→  - Emit: track-order {orderId, restaurant?, destination?}, stop-tracking {orderId}, cancel-order {orderId}
+    22→  - Listen: tracking-init (full state), tracking-update (full state), tracking-error {message, error}
+    23→
+    24→---
+    25→Task ID: 9
+    26→Agent: frontend-styling-expert (AI UI)
+    27→Task: Build AI Assistant chatbot widget + AI smart search dialog
+    28→
+    29→Work Log:
+    30→- Read worklog.md and project context (store.ts, types.ts, format.ts, shared.tsx, button.tsx, dialog.tsx, sheet.tsx, scroll-area.tsx, skeleton.tsx, avatar.tsx, input.tsx, sonner.tsx, use-mobile.ts, globals.css, both AI API routes at /api/ai/search and /api/ai/recommend, eslint config). Confirmed Swiggy orange theme (primary = oklch orange), shadcn New York style, framer-motion + sonner available.
+    31→- Built src/components/food/ai-assistant.tsx — floating "Foodie AI" chatbot widget. Orange round floating button (Sparkles icon, framer-motion rotate transition between open/close icons). Desktop: 360x520 floating panel with motion scale/opacity entrance via AnimatePresence. Mobile: bottom Sheet at 88dvh (uses useIsMobile hook). ChatBody shared between both. Header (avatar + "Foodie AI" + "Your food buddy" subtitle + Beta badge + clear button), scrollable message list (auto-scroll via ref + useEffect), user bubbles right-aligned orange, assistant bubbles left-aligned white with Bot avatar, framer-motion entrance on each message. Suggested prompt chips above input when conversation is empty (4 prompts: spicy, healthy under ₹300, best biryani, dessert). Auto-growing textarea with Enter-to-send, Shift+Enter for newline. Animated typing dots (3 motion spans with staggered opacity/y loop). Inline error card with Retry button. Calls POST /api/ai/recommend with {message, history} and maintains conversation history in state (strips welcome message before sending). All aria-labels, accessibility, keyboard support.
+    32→- Built src/components/food/ai-search-dialog.tsx — controlled Dialog (open, onOpenChange props). Orange header with title + description + big search input (Search icon, placeholder "Describe what you're craving...", X clear button, Sparkles/Search submit button with Loader2 spinner when loading). Suggestion chips: Quick breakfast, Late night craving, Protein packed, Comfort food, Sweet tooth (each with emoji). Body uses ScrollArea with AnimatePresence switching between: empty state (UtensilsCrossed icon + "Tell me what you're in the mood for!"), loading skeletons (orange banner skeleton + 4 card skeletons), error state (AlertCircle + Retry button), and results. Results show aiExplanation as orange-tinted banner with Sparkles + "Foodie AI says" label, then list of ResultCards. ResultCard: rounded-2xl with image (lazy-loaded img with fallback UtensilsCrossed icon), VegDot badge top-left, name + Bestseller tag, restaurant name + RatingBadge, description (2-line clamp), price (formatINR), and ADD button. ADD builds a proper CartItem (uid `${id}-default`, selectedVariants [], selectedAddons [], unitPrice=price, total=price, quantity=1, restaurantId/Name from item.restaurant) and calls useFoodStore.addToCart + shows sonner toast.success "Added to cart". Button switches to "Added" with Check icon after adding. Calls POST /api/ai/search with {query}. Auto-focus input on open, reset state on close.
+    33→- Ran `bun run lint` — 0 errors. One pre-existing warning in prisma/seed.ts (not our file). Also removed unused ScrollArea import from ai-assistant.tsx and unused cn/formatRating imports from ai-search-dialog.tsx for cleanliness.
+    34→- Ran `bunx tsc --noEmit` — no TypeScript errors in our two new files (only unrelated errors in examples/ and skills/ directories).
+    35→
+    36→Stage Summary:
+    37→- Files created:
+    38→  - /home/z/my-project/src/components/food/ai-assistant.tsx (Foodie AI floating chatbot widget, ~500 lines)
+    39→  - /home/z/my-project/src/components/food/ai-search-dialog.tsx (AI smart search Dialog, ~470 lines)
+    40→- Both components are 'use client', use the Swiggy orange theme (bg-primary / text-primary-foreground), shadcn/ui (Button, Avatar, Sheet, Dialog, Input, ScrollArea, Skeleton), lucide-react icons, framer-motion animations, and sonner toasts (search dialog).
+    41→- Chatbot: floating button toggles desktop panel OR mobile bottom Sheet; conversation history sent to /api/ai/recommend; suggested prompts; typing dots; inline error + retry; accessible (aria-labels, keyboard).
+    42→- Search dialog: controlled by open/onOpenChange; AI explanation banner; result cards with image/VegDot/rating/price/ADD; ADD pushes a properly-shaped CartItem into the Zustand store via useFoodStore.addToCart and fires a sonner toast; loading skeletons + empty + error states.
+    43→- Lint passes (0 errors). No dev server started.
+    44→
+    45→---
+    46→Task ID: 8+10
+    47→Agent: full-stack-developer (tracking/orders/profile)
+    48→Task: Build live order tracking view + orders history + profile/wallet views
+    49→
+    50→Work Log:
+    51→- Read worklog, store, types, format helpers, shared.tsx, globals.css, the websocket frontend example, tracking-service server source, and shadcn Card/Button/Avatar/Progress/Separator/Badge/Skeleton/ScrollArea component sources to align with project conventions.
+    52→- Confirmed `socket.io-client`, `framer-motion`, `sonner`, `lucide-react`, `recharts` already installed; tracking mini-service running on port 3004 with path '/', emits tracking-init/tracking-update/tracking-error and listens for track-order/stop-tracking.
+    53→- Created `src/components/food/order-tracking.tsx`: 'use client', props `{ orderId }`. Fetches `GET /api/orders/[id]`, then connects socket via `io('/', { path: '/', transports: ['websocket'], query: { XTransformPort: '3004' } })`, emits `track-order` with restaurant/destination derived from fetched order. Listens for tracking-init & tracking-update → stores state + calls `updateOrderStatus` so orders list stays in sync; listens for tracking-error. Cleanup emits stop-tracking + disconnects. Two-column responsive layout: LEFT = stylized live map with `.map-grid` bg, dashed SVG bezier route restaurant→destination, restaurant marker (HomeIcon pill), destination marker (MapPin pill), animated rider marker (Bike / CheckCircle2 when delivered) moved via framer-motion spring along the bezier based on rider lat/lng progress; LIVE pulsing badge (red→green→red), ETA chip with Clock icon, current-status banner at bottom. RIGHT = order header card (code, name, status badge), vertical 8-step timeline (done=green check, current=pulsing orange dot, future=gray), rider card (avatar initials, name, rating, tel: call button), order summary (items + totals rows + To pay), Reorder button (clears cart, toast, setView('home')). Loading skeleton + error state. Accessible (aria-label, aria-current).
+    54→- Created `src/components/food/orders-list.tsx`: 'use client'. Fetches `GET /api/orders` → setOrders. Loading skeleton (4 cards), error state, empty state (PackageOpen icon + "Browse restaurants"). Stagger-animated responsive grid (1 col mobile, 2 col md+). Each card: restaurant name + cuisine, color-coded status badge, order code, timeAgo, item count, items summary (first 2 + "and N more"), total via formatINR, Reorder (toast + setView home) and Track (only for in-progress statuses, calls goToTracking).
+    55→- Created `src/components/food/profile.tsx`: 'use client'. Fetches `GET /api/customer`. Sections: (1) profile header card (avatar initials, name, tier badge Silver/Gold/Platinum, phone, email, Edit button); (2) wallet card with orange gradient (from-primary to-orange-600, decorative circles), balance in formatINR, Add Money button (toast); (3) loyalty card with points total, Progress bar to next tier, "X pts to Y" helper; (4) saved addresses list (Home icon, label, fullAddress, landmark) with empty state + Add button; (5) quick links grid (2x2 mobile, 1x4 desktop): My Orders (setView 'orders'), Saved Restaurants, Help & Support, Settings — each card with Lucide icon and toast placeholder. Loading skeleton + error state.
+    56→- Ran `bun run lint`: hit 3 `react-hooks/set-state-in-effect` errors for the synchronous `setLoading(true)` calls at the top of each useEffect. Fixed by removing the synchronous calls (useState already defaults to true) for OrdersList and Profile, and by adopting the React-recommended "adjust state during render" pattern (prevOrderId ref + conditional setState during render) for OrderTracking so the orderId prop change still resets state cleanly. Final lint run: 0 errors in my files (only a pre-existing unused eslint-disable warning in prisma/seed.ts remains).
+    57→- Wrote agent-ctx summary at `/home/z/my-project/agent-ctx/8+10-full-stack-developer.md`.
+    58→
+    59→Stage Summary:
+    60→- Files created:
+    61→  - /home/z/my-project/src/components/food/order-tracking.tsx (live tracking with stylized animated map + socket.io + timeline + rider card + order summary)
+    62→  - /home/z/my-project/src/components/food/orders-list.tsx (orders history grid with empty/error/loading states)
+    63→  - /home/z/my-project/src/components/food/profile.tsx (profile header + wallet + loyalty + addresses + quick links)
+    64→- All three components are 'use client', responsive, accessible, use the orange Swiggy theme (no indigo/blue), framer-motion for entrance animations, sonner for toasts, and shadcn/ui (Card, Button, Badge, Avatar, Progress, Separator, Skeleton).
+    65→- Lint passes for all three files (no errors).
+    66→- Socket connection uses the required `io('/', { path: '/', query: { XTransformPort: '3004' } })` pattern; correctly emits track-order on connect and stop-tracking on unmount.
+    67→
+    68→---
+    69→Task ID: ORCHESTRATOR (1, 2, 3-a, 4, 5, 6, 7, 11)
+    70→Agent: Z.ai Code (orchestrator)
+    71→Task: Build complete Swiggy/Zomato-style food delivery platform
+    72→
+    73→Work Log:
+    74→- Designed Prisma schema (16 models: City, Zone, Restaurant, MenuCategory, MenuItem, Customer, Address, Order, OrderItem, Review, Coupon, Rider) with SQLite. Pushed schema to db.
+    75→- Created comprehensive seed script (prisma/seed.ts) with 12 restaurants across 12 cuisines, ~80+ menu items with variants/addons, 5 coupons, 5 riders, customer + addresses, reviews. Used curated Unsplash food image URLs.
+    76→- Built REST API routes: /api/restaurants (list w/ filters: search, cuisine, veg, sort, fast, rating4), /api/restaurants/[slug] (detail w/ menu+reviews), /api/categories, /api/coupons (list + validate), /api/customer, /api/orders (list + create w/ coupon+tax+tip logic), /api/orders/[id].
+    77→- Delegated AI routes (Task 3-b) and WebSocket tracking service (Task 3-c) to subagents — both completed.
+    78→- Installed socket.io-client for frontend. Built Zustand store (src/lib/store.ts) with persisted cart/address/orders + view navigation + cart CRUD + coupon/tip state + order sync. Built types.ts + format.ts helpers.
+    79→- Built Swiggy orange theme (globals.css OKLCH orange primary, custom scrollbar, map-grid, live-dot, rider-bounce animations).
+    80→- Built frontend components: header (location/search/cart/nav), shared (VegDot, RatingBadge, SpiceLevel, BestSellerTag), category-carousel, restaurant-card, home-view (hero+categories+filters+grid), menu-item-card (with full customization dialog for variants+addons), restaurant-detail (cover+info+sticky menu nav+items+reviews+floating cart bar), cart-drawer (Sheet w/ items+coupons+bill), checkout-view (address+payment+tip+summary+place order), footer.
+    81→- Assembled main page.tsx orchestrating all views + cart drawer + AI assistant overlay.
+    82→- Updated layout.tsx with FoodieDash metadata + Sonner toaster.
+    83→- Debugged: AI search returned empty items because catalog context omitted menu item IDs. Fixed catalog.ts to include [id:XXX] per dish and updated the LLM prompt. Verified search now returns real matching dishes.
+    84→- Debugged: WebSocket tracking requires gateway routing (XTransformPort). Direct localhost:3000 access can't route WS to port 3004; testing through Caddy gateway (port 81) works.
+    85→- Ran Agent Browser end-to-end verification through the gateway:
+    86→  * Home: 12 restaurants render with offers, ratings, filters, categories ✅
+    87→  * Restaurant detail: menu, bestseller tags, CUSTOMISE/ADD buttons, reviews ✅
+    88→  * Add to cart → floating "View Cart" bar appears ✅
+    89→  * Cart drawer: items, bill details, coupon apply ✅
+    90→  * Checkout: address, payment methods, tip, place order → order created ✅
+    91→  * Live tracking: WS connected, full lifecycle PLACED→ACCEPTED→PREPARING→READY→ASSIGNED→PICKED_UP→ON_ROUTE→DELIVERED, animated map, 8-step timeline, rider card, ETA ✅
+    92→  * AI Assistant: LLM recommendations referencing real restaurants/dishes/prices ✅
+    93→  * AI Search: natural language → matching dishes with ADD buttons ✅
+    94→  * Orders list + Profile/Wallet (₹250 balance, loyalty, addresses) ✅
+    95→- Final lint: 0 errors, 0 warnings.
+    96→
+    97→Stage Summary:
+    98→- Complete production-grade food delivery platform (FoodieDash) built on Next.js 16 + TypeScript + Tailwind 4 + shadcn/ui + Prisma SQLite.
+    99→- 12 restaurants, 80+ menu items, full order lifecycle, live websocket tracking, AI-powered search + chatbot (z-ai-web-dev-sdk LLM).
+   100→- Two running services: Next.js (port 3000) + tracking-service (port 3004), both via Caddy gateway (port 81).
+   101→- All 11 todos completed. Browser-verified end-to-end.
+   102→
+   103→---
+   104→Task ID: 8
+   105→Agent: full-stack-developer (admin portal)
+   106→Task: Build RBAC admin portal with particle-level permission gating
+   107→
+   108→Work Log:
+   109→- Read worklog.md (prior tasks 3-c, 9, 8+10, ORCHESTRATOR), src/lib/rbac.ts (PERMISSIONS, ROLES, ADMIN_MODULES, helpers), src/lib/auth-store.ts (useAuthStore with user/roles/permissions/hasPermission/isAdmin/setLoginOpen), src/lib/store.ts (useFoodStore with setView), src/lib/format.ts (formatINR, formatCount, timeAgo, shortDate), src/lib/types.ts (Restaurant, Order, Coupon, ViewName), src/components/food/shared.tsx, src/components/food/profile.tsx (for patterns), shadcn component sources (table, dialog, tabs, badge, card, button, sheet, avatar, checkbox, label, input, separator, skeleton, scroll-area, tooltip), src/app/globals.css (orange theme OKLCH tokens, custom scrollbar .scroll-thin, .no-scrollbar), and the existing API routes for /api/admin/stats, /api/admin/users, /api/admin/roles, /api/admin/permissions, /api/restaurants, /api/orders, /api/coupons to confirm response shapes and 403 behavior.
+   110→- Confirmed dev.log: page.tsx imports AdminPortal from @/components/food/admin-portal which didn't exist yet — was producing 500 errors.
+   111→- Confirmed eslint config disables most rules but leaves `react-hooks/set-state-in-effect` active (the one that bit profile.tsx in task 8+10). Planned to use the React-recommended "adjust state during render" pattern for prop-synced dialog state, and `key`-based remount for refresh buttons — both avoid setState in effect bodies.
+   112→- Built src/components/food/admin-portal.tsx (~1500 lines, single 'use client' component exporting AdminPortal):
+   113→  * Access gates: while auth loading → skeleton; if !user → AccessDeniedCard with Sign in button (calls setLoginOpen(true)); if !isAdmin() → AccessDeniedCard "Limited access" with Back to home button (calls setView('home')); else renders PortalShell.
+   114→  * PortalShell: sticky desktop sidebar (220px) + top bar ("Admin Portal" + role badge pills + "{N} permissions" pill) + AnimatePresence motion.div content swap. Mobile collapses sidebar into a horizontal scrollable pill bar at top (no-scrollbar). Active module derived with useMemo (falls back to first visible module when the active one disappears — no setState-in-effect).
+   115→  * SidebarNav: lists ADMIN_MODULES filtered by canDo(user, m.permission). Hidden modules not rendered (this IS the particle-level module gating). Active module highlighted orange (bg-primary).
+   116→  * Each module renders: ModuleHeader (icon + title + description + optional action) + ParticleScopeBanner ("You have X of Y actions in the {module} module (Z%)") + module body.
+   117→  * Overview (always visible): fetches GET /api/admin/stats. 8 KPI cards (users, restaurants, orders, riders, revenue via formatINR, delivered, cancelled, coupons) with staggered framer-motion entrance. Two recharts BarCharts: ordersByStatus (vertical bars, orange) and usersByRole (horizontal bars, amber). Handles 403 gracefully with a friendly "Analytics access required" card. Refresh button remounts body via key={reloadToken}.
+   118→  * Users (users.read): fetches GET /api/admin/users. shadcn Table with avatar initials, phone, email, role badges, status badge, createdAt (timeAgo). Particle-level action buttons per row: Edit roles (Dialog with role checkboxes — only if users.update), Activate/Deactivate toggle (Power icon — only if users.update, disabled for own account), Delete (trash icon — only if users.delete, disabled for own account). Add User button at top (only if users.create) opens AddUserDialog (phone, name, email, role checkboxes). All mutations hit the API and on success call onMutated() which increments reloadToken to refetch + sonner toast.
+   119→  * Roles & Permissions (roles.read): fetches both GET /api/admin/roles and GET /api/admin/permissions in parallel. Two tabs: (a) "By Role" — card per role showing label, description, user count, permissions count, and permissions grouped by module as small badges; SUPER_ADMIN shows a Lock badge and "Immutable" note and cannot be edited; if user has roles.update, "Edit permissions" button opens EditPermissionsDialog (full checklist of all PERMISSIONS grouped by module with All/None shortcuts per module); saves via PATCH /api/admin/roles { roleName, permissions }. (b) "By Permission" — table of all permissions with action, module, label, description, and role badges.
+   120→  * Restaurants (restaurants.read): fetches GET /api/restaurants. Table with name, cuisine, rating badge, cost for two (formatINR), delivery time, status. Particle-level: Add restaurant (restaurants.create) and per-row Edit (restaurants.update) + Delete (restaurants.delete) buttons, all toast.info("Demo: would …") since the spec said no need to build the full editor.
+   121→  * Orders (orders.read): fetches GET /api/orders. Table with order code, restaurant name, status badge (color-coded via orderStatusColor — green/amber/orange/red, NO blue), total (formatINR), payment method, createdAt (timeAgo). Particle-level: row "Cancel" button only if orders.cancel (toast.info demo).
+   122→  * Riders (riders.read): friendly "coming soon" card. Best-effort fetches /api/admin/stats to surface the rider count if available (403 silently ignored). Particle-level: Add rider button only if riders.create (toast.info demo).
+   123→  * Coupons (coupons.read): fetches GET /api/coupons. Table with code (mono), description, type badge, value (percent or INR), min order, max discount. Particle-level: Add coupon (coupons.create) + per-row Edit (coupons.update) + Delete (coupons.delete) buttons, all toast.info demo.
+   124→  * Analytics (analytics.read): two recharts charts using mock 7-day data — AreaChart for revenue trend (orange gradient fill) and BarChart for order volume (amber bars). Tooltip formats values via formatINR.
+   125→  * Settings (settings.read): two cards — "Platform settings" (service fee, delivery radius, support SLA) and "City zones" (Bangalore/Mumbai/Delhi zone counts). Both have Edit buttons gated by settings.update (disabled if no permission; toast.info when clicked).
+   126→  * GenericModuleShell (used for payments, settlements, campaigns, reviews, tickets): a consistent shell — ModuleHeader + ParticleScopeBanner + a centered card with the module icon, the gating-permission code shown, and particle-level Create/Edit/Delete buttons (and any other non-read actions like payments.process, settlements.process, notifications.send, tickets.resolve, reviews.moderate) — each shown ONLY if the user has that specific permission; toast.info when clicked. Footer shows "Showing X of Y particle actions".
+   127→- Used the React "adjust state during render" pattern for EditRolesDialog and EditPermissionsDialog (prevTarget/prevRole ref + conditional setState during render) so that opening them for a different row doesn't require setState-in-effect.
+   128→- All fetches use the let-mounted + .then/.catch pattern; setState calls happen only inside async callbacks (never synchronously in effect bodies), so the `react-hooks/set-state-in-effect` rule passes.
+   129→- Ran `bun run lint`: 0 errors in my file (only a pre-existing unused eslint-disable warning in prisma/seed-rbac.ts remains). Had to remove one useEffect that called setActiveId synchronously — replaced with a derived `active` useMemo (falls back to first visible module when activeId is stale).
+   130→- Ran `bunx tsc --noEmit` on the whole project: 0 errors in src/components/food/admin-portal.tsx (errors only in unrelated pre-existing files: home-view.tsx, profile.tsx, restaurant-detail.tsx, examples/, skills/).
+   131→- Wrote agent-ctx summary at /home/z/my-project/agent-ctx/8-full-stack-developer-admin-portal.md.
+   132→
+   133→Stage Summary:
+   134→- File created: /home/z/my-project/src/components/food/admin-portal.tsx (single 'use client' component, ~1500 lines, exports AdminPortal).
+   135→- Implements full particle-level RBAC: module-level gating (hidden sidebar entries), action-level gating (hidden buttons per row), and per-module "You have X of Y actions" banner so the particle-level nature is visible.
+   136→- Resolves the existing 500 error in dev.log (page.tsx was importing a non-existent AdminPortal).
+   137→- 9 dedicated module components (Overview, Users, Roles, Restaurants, Orders, Riders, Coupons, Analytics, Settings) + GenericModuleShell for the remaining 5 modules.
+   138→- Real mutations wired for Users (POST/PATCH/DELETE) and Roles (PATCH); demo toast.info for Restaurants/Orders/Coupons/Riders/Settings per the spec.
+   139→- recharts BarChart (orders by status, users by role, order volume), AreaChart (revenue trend), shadcn Table/Dialog/Tabs/Checkbox/Badge/Avatar/Card/Button/Skeleton/Separator throughout.
+   140→- Orange Swiggy theme throughout (bg-primary, bg-primary/10, text-primary); NO indigo/blue. Mobile-responsive (sidebar collapses to horizontal pill bar). framer-motion staggered entrance on KPI cards + AnimatePresence module swap. Loading skeletons + ErrorCard + Retry + 403 graceful handling. Accessible (aria-label on icon buttons, aria-current on active module, semantic <header>/<aside>/<nav>/<main>).
+   141→- Lint: 0 errors. tsc: 0 errors in admin-portal.tsx. Did NOT start dev server.
+   142→
+   143→---
+   144→Task ID: AUTH+RBAC (1-10)
+   145→Agent: Z.ai Code (orchestrator)
+   146→Task: Implement OTP-based authentication + particle-level RBAC
+   147→
+   148→Work Log:
+   149→- Extended Prisma schema with 6 new models: User, Role, Permission, RolePermission, UserRole, OtpCode, Session. Added optional `userId` FK on Order to link orders to authenticated users. Pushed schema.
+   150→- Built src/lib/rbac.ts: 56 particle-level permissions across 18 modules (users, roles, cities, restaurants, menus, orders, riders, payments, settlements, commissions, coupons, campaigns, notifications, tickets, reviews, wallets, reports, analytics, settings) + 10 roles (SUPER_ADMIN, CITY_ADMIN, FINANCE_MANAGER, OPERATIONS_MANAGER, SUPPORT_AGENT, MARKETING_MANAGER, RESTAURANT_OWNER, RESTAURANT_STAFF, DELIVERY_PARTNER, CUSTOMER) with full role→permission matrix.
+   151→- Seeded RBAC: 56 permissions, 10 roles, 10 demo users (one per role, all OTP=123456). prisma/seed-rbac.ts.
+   152→- Built src/lib/auth.ts: session management via httpOnly cookie (fd_session), DB-backed sessions (7-day TTL), getAuthUser(), requireAuth(), requirePermission(action), can(user, action), createSession(), destroySession(), OTP generation + phone normalization.
+   153→- Built auth API routes: POST /api/auth/otp/send (generates 6-digit OTP, 5min expiry, rate-limited; demo accounts use fixed 123456), POST /api/auth/otp/verify (validates OTP, find-or-create user with CUSTOMER role, creates session, sets cookie), POST /api/auth/logout, GET /api/auth/me.
+   154→- Built admin API routes (all RBAC-protected via requirePermission): GET/POST/PATCH/DELETE /api/admin/users (users.read/create/update/delete), GET/PATCH /api/admin/roles (roles.read/update), GET /api/admin/permissions (roles.read), GET /api/admin/stats (analytics.read), POST /api/admin/check (bulk permission check).
+   155→- Applied RBAC to order placement: POST /api/orders now requires auth + `orders.create` permission (returns 401 if unauthenticated, 403 if lacking permission). Orders linked to authenticated user via userId. GET /api/orders scoped to authenticated user.
+   156→- Built src/lib/auth-store.ts (Zustand): user/permissions state, hydrate() fetches /api/auth/me on app load, hasPermission/hasRole/isAdmin helpers, logout().
+   157→- Built src/components/food/login-dialog.tsx: OTP login modal with phone→OTP→verify flow, one-click quick demo login for all 10 roles, 6-digit InputOTP UI, success state, auto-verify for demo accounts.
+   158→- Updated header.tsx: auth-aware nav (Sign in button when logged out; Admin Portal link + user dropdown with avatar/role badges/sign out when logged in).
+   159→- Updated page.tsx: hydrates auth on mount, renders LoginDialog + AdminPortal view.
+   160→- Updated checkout-view.tsx: shows "Sign in required" banner when unauthenticated, handles 401 (opens login) and 403 (shows permission error) from order placement.
+   161→- Delegated Admin Portal UI (Task 8) to subagent: built src/components/food/admin-portal.tsx (~1500 lines) with particle-level gating at 3 layers (module visibility, action buttons, scope banner showing "X of Y actions").
+   162→- Fixed cart-drawer checkout transition (setView before setOpen to avoid Sheet unmount swallowing the state update).
+   163→
+   164→Verification (Agent Browser through Caddy gateway on port 81):
+   165→- Home renders with "Sign in" button (logged out state) ✅
+   166→- OTP login modal: phone input + 10 one-click demo role buttons ✅
+   167→- Quick login as Super Admin → header shows avatar + "Super Admin" + "Admin Portal" button ✅
+   168→- Admin Portal: 14 modules visible (Super Admin has all 56 permissions), KPI cards (10 users, 12 restaurants, 5 riders), recharts bar charts ✅
+   169→- Users module (Super Admin): "Add user", "Edit roles", "Deactivate", "Delete" buttons all visible ✅
+   170→- Roles & Permissions module: "By Role" tab (10 role cards with permission badges + Edit permissions dialog) + "By Permission" tab (56 permissions table) ✅
+   171→- Logged out, logged in as Support Agent → Admin Portal shows only 5 modules (Overview, Users, Orders, Reviews, Support Tickets) + "9 permissions" badge ✅
+   172→- Users module (Support Agent): NO action buttons (only users.read) + particle scope banner "You have 1 of 4 actions" ✅
+   173→- API RBAC enforcement (curl): unauthenticated POST /api/orders → 401; Support Agent GET /api/admin/users → 200; Support Agent POST /api/admin/users → 403; Support Agent GET /api/admin/roles → 403; Support Agent GET /api/admin/stats → 403 ✅
+   174→- Logged in as Customer → placed order (POST /api/orders 200) → live tracking reached DELIVERED ✅
+   175→- No "Admin Portal" button for Customer role (not an admin) ✅
+   176→- Console clean, no errors. Lint: 0 errors, 0 warnings.
+   177→
+   178→Stage Summary:
+   179→- Complete OTP-based authentication + particle-level RBAC implemented end-to-end.
+   180→- 10 roles, 56 fine-grained permissions, 10 demo accounts (OTP 123456).
+   181→- Auth enforced at API layer (401/403), UI layer (hidden buttons/modules), and demonstrated via the Admin Portal with particle-level scope banners.
+   182→- Files: prisma/schema.prisma (+6 models), prisma/seed-rbac.ts, src/lib/rbac.ts, src/lib/auth.ts, src/lib/auth-store.ts, src/lib/demo-users.ts, src/app/api/auth/* (4 routes), src/app/api/admin/* (5 routes), src/app/api/orders/route.ts (updated), src/components/food/login-dialog.tsx, src/components/food/header.tsx (updated), src/components/food/checkout-view.tsx (updated), src/components/food/cart-drawer.tsx (fixed), src/components/food/admin-portal.tsx (subagent), src/app/page.tsx (updated).
+   183→
+   184→---
+   185→Task ID: GEOLOCATION (1-8)
+   186→Agent: Z.ai Code (orchestrator)
+   187→Task: Implement GPS-based current location detection + nearby restaurants in Hyderabad
+   188→
+   189→Work Log:
+   190→- Built src/lib/geo.ts: Haversine great-circle distance (km), formatDistance/formatCoords/formatAccuracy helpers, nearestAreaLabel (reverse-geocodes a coordinate to "Near <Area>, <City>" using known HY/BLR neighbourhoods), isInHyderabad/isInBangalore helpers.
+   191→- Wrote prisma/seed-hyderabad.ts (additive — does NOT touch existing data): created Hyderabad city + 8 zones + 8 restaurants with real HY coordinates (Banjara Hills, Jubilee Hills, Gachibowli, Hitech City, Madhapur, Kondapur, Secunderabad, Charminar). Restaurants include Paradise Food Court, Ohri's Jiva, Pizza Den, Burger King Madhapur, Chutneys Gachibowli, Mainland China, Healthy Bites, Shah Gouse Cafe. Also backfilled lat/lng for existing Bangalore restaurants. Ran it: 8 HY restaurants added, 20 total.
+   192→- Updated src/app/api/restaurants/route.ts: accepts lat/lng/radius/city query params. When lat+lng provided, computes haversine distance for each restaurant, filters by radius (default 15km), includes `distance` field in response, and supports sort=distance (sorts by distance ascending). Restaurants without coords are excluded from distance sort but kept in results.
+   193→- Added userLocation state to Zustand store (src/lib/store.ts): userLocation: UserLocation | null, setUserLocation, locating, setLocating. Persisted to localStorage. UserLocation = {lat, lng, label, accuracy?, source: 'gps'|'manual'|'simulated', detectedAt}.
+   194→- Added `distance?: number | null` to Restaurant type.
+   195→- Built src/components/food/location-selector.tsx: LocationSelector (Sheet with "Use my current location" GPS button using navigator.geolocation.getCurrentPosition with enableHighAccuracy:true, timeout 15s; plus manual city pickers for 6 Hyderabad areas + 6 Bangalore areas with real coordinates). Shows current detected location card (label, coords, accuracy, source). MobileLocationButton compact variant. GPS errors handled (permission denied, unavailable, timeout) with friendly toasts.
+   196→- Updated src/components/food/header.tsx: replaced inline location Sheet with the new LocationSelector component (both desktop and mobile).
+   197→- Updated src/components/food/restaurant-card.tsx: distance badge on image ("0 M AWAY", "3.6 KM AWAY") + "X km from you" text under cuisine. Promoted badge shifts right when distance badge present.
+   198→- Rewrote src/components/food/home-view.tsx: location banner (green when Hyderabad, shows label + coords + accuracy + "Showing N restaurants within 15 km, sorted by distance"), auto-switches sort to "Nearest first (GPS)" when location detected (using React "adjust state during render" pattern), "Nearby restaurants (N within 15 km)" section showing only restaurants within radius, distance-sorted. Remaining restaurants shown in "More restaurants" section. Sort dropdown gains "Nearest first (GPS)" option when location is set. Hero banner copy adapts ("Hyderabad, your food is here." when in HY). Passes lat/lng/radius to /api/restaurants.
+   199→
+   200→Verification (Agent Browser through Caddy gateway):
+   201→- Home loads with location selector showing "Change location" ✅
+   202→- Opened location sheet: "Use my current location" (GPS) button + Hyderabad (Banjara Hills, Gachibowli, Hitech City, Madhapur, Secunderabad, Charminar) + Bangalore area pickers ✅
+   203→- Picked "Banjara Hills, Hyderabad" → location banner shows "Banjara Hills, Hyderabad" + coords + "Showing 8 restaurants within 15 km, sorted by distance" ✅
+   204→- Sort auto-switched to "Nearest first (GPS)" ✅
+   205→- "Nearby restaurants (8 within 15 km)" section rendered, sorted by distance ✅
+   206→- Distance badges on cards: Ohri's Jiva "0 M AWAY" (same location), Mainland China "3.6 KM AWAY", Burger King "6.5 KM AWAY", Shah Ghouse "6.8 KM AWAY" ✅
+   207→- "X km from you" text under each restaurant name ✅
+   208→- API verified: GET /api/restaurants?lat=17.4126&lng=78.4396&radius=15&sort=distance → 200, returns 8 HY restaurants sorted 0→10km ✅
+   209→- GPS "Use my current location" button triggers navigator.geolocation (headless browser geolocation may not return HY, but the API + error handling is wired) ✅
+   210→- Console clean, no errors. Lint: 0 errors, 0 warnings.
+   211→
+   212→Stage Summary:
+   213→- Real GPS-based geolocation detection implemented (navigator.geolocation, high accuracy).
+   214→- Particle-distance: Haversine great-circle distance computed server-side per restaurant.
+   215→- Hyderabad seeded with 8 real restaurants across 8 neighbourhoods (Banjara Hills, Jubilee Hills, Gachibowli, Hitech City, Madhapur, Kondapur, Secunderabad, Charminar).
+   216→- Nearby restaurants shown sorted by precise distance with km/m badges.
+   217→- Files: src/lib/geo.ts, prisma/seed-hyderabad.ts, src/app/api/restaurants/route.ts (updated), src/lib/store.ts (updated), src/lib/types.ts (updated), src/components/food/location-selector.tsx, src/components/food/header.tsx (updated), src/components/food/restaurant-card.tsx (updated), src/components/food/home-view.tsx (rewritten).
+   218→

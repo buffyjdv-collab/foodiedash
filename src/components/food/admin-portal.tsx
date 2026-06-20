@@ -43,6 +43,13 @@ import {
   ShieldAlert,
   Power,
   Loader2,
+  MapPin,
+  Phone,
+  UtensilsCrossed,
+  ChevronRight,
+  ChevronDown,
+  Navigation,
+  Package,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -78,6 +85,35 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetFooter,
+  SheetClose,
+} from '@/components/ui/sheet'
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from '@/components/ui/alert-dialog'
+import { ScrollArea } from '@/components/ui/scroll-area'
 
 import { useAuthStore, type AuthUser } from '@/lib/auth-store'
 import { useFoodStore } from '@/lib/store'
@@ -89,7 +125,7 @@ import {
   permissionsForModule,
 } from '@/lib/rbac'
 import { formatINR, formatCount, timeAgo } from '@/lib/format'
-import type { Restaurant, Order, Coupon } from '@/lib/types'
+import type { Restaurant, Order, Coupon, MenuCategory, MenuItem } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 // ============================================================
@@ -1452,31 +1488,59 @@ function EditPermissionsDialog({ role, open, onOpenChange, onSaved }: {
 // ============================================================
 // Restaurants module
 // ============================================================
+interface CityListItem {
+  id: string
+  name: string
+  state: string
+  isActive: boolean
+  restaurantCount: number
+}
+
 function RestaurantsModule({ user }: { user: AuthUser }) {
+  const [reloadToken, setReloadToken] = useState(0)
+  const [addOpen, setAddOpen] = useState(false)
+
   return (
     <div>
       <ModuleHeader
         title="Restaurants"
-        description="Onboard and manage restaurant partners."
+        description="Onboard and manage restaurant partners, menus, and promotions."
         icon={Store}
         action={
           canDo(user, 'restaurants.create') ? (
-            <Button size="sm" onClick={() => toast.info('Demo: would open restaurant editor')}>
+            <Button size="sm" onClick={() => setAddOpen(true)}>
               <Plus className="h-3.5 w-3.5" /> Add restaurant
             </Button>
           ) : null
         }
       />
       <ParticleScopeBanner user={user} module="restaurants" />
-      <RestaurantsBody user={user} />
+      <AddRestaurantDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        onSaved={() => setReloadToken((t) => t + 1)}
+      />
+      <RestaurantsBody
+        key={reloadToken}
+        user={user}
+        onMutated={() => setReloadToken((t) => t + 1)}
+        onAdd={() => setAddOpen(true)}
+      />
     </div>
   )
 }
 
-function RestaurantsBody({ user }: { user: AuthUser }) {
+function RestaurantsBody({ user, onMutated, onAdd }: {
+  user: AuthUser
+  onMutated: () => void
+  onAdd: () => void
+}) {
   const [restaurants, setRestaurants] = useState<Restaurant[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [editing, setEditing] = useState<Restaurant | null>(null)
+  const [deleting, setDeleting] = useState<Restaurant | null>(null)
+  const [menuFor, setMenuFor] = useState<Restaurant | null>(null)
 
   useEffect(() => {
     let mounted = true
@@ -1497,38 +1561,103 @@ function RestaurantsBody({ user }: { user: AuthUser }) {
     return () => { mounted = false }
   }, [])
 
-  if (loading) return <Skeleton className="h-64 rounded-2xl" />
-  if (error) return <ErrorCard message={error} />
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-14 rounded-xl" />
+        ))}
+      </div>
+    )
+  }
+
+  if (error) return <ErrorCard message={error} onRetry={onMutated} />
+
+  if (restaurants.length === 0) {
+    return (
+      <Card className="rounded-2xl">
+        <CardContent className="p-8 flex flex-col items-center text-center gap-3">
+          <div className="rounded-full bg-primary/10 p-3">
+            <Store className="h-8 w-8 text-primary" />
+          </div>
+          <h3 className="text-lg font-semibold">No restaurants yet</h3>
+          <p className="text-sm text-muted-foreground max-w-md">
+            Onboard your first restaurant partner to start receiving orders.
+          </p>
+          {canDo(user, 'restaurants.create') && (
+            <Button size="sm" onClick={onAdd}>
+              <Plus className="h-3.5 w-3.5" /> Add restaurant
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const canEdit = canDo(user, 'restaurants.update')
+  const canDelete = canDo(user, 'restaurants.delete')
+  const canMenu = canDo(user, 'menus.read')
 
   return (
-    <Card className="rounded-2xl">
-      <CardContent className="p-0 overflow-hidden">
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Cuisine</TableHead>
-                <TableHead>Rating</TableHead>
-                <TableHead>Cost for two</TableHead>
-                <TableHead>Delivery</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {restaurants.map((r) => {
-                const canEdit = canDo(user, 'restaurants.update')
-                const canDelete = canDo(user, 'restaurants.delete')
-                return (
+    <>
+      <Card className="rounded-2xl">
+        <CardContent className="p-0 overflow-hidden">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Restaurant</TableHead>
+                  <TableHead>Rating</TableHead>
+                  <TableHead>Cost for two</TableHead>
+                  <TableHead>Delivery</TableHead>
+                  <TableHead>Fee</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {restaurants.map((r) => (
                   <TableRow key={r.id}>
-                    <TableCell className="font-medium">{r.name}</TableCell>
-                    <TableCell className="text-muted-foreground text-xs">{r.cuisine}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="text-xs">{r.rating.toFixed(1)} ★</Badge>
+                      <div className="flex items-center gap-2.5 min-w-[200px]">
+                        <div className="h-9 w-9 rounded-md overflow-hidden bg-muted shrink-0">
+                          {r.imageUrl ? (
+                            <img src={r.imageUrl} alt={r.name} className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="h-full w-full flex items-center justify-center">
+                              <Store className="h-4 w-4 text-muted-foreground" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="font-medium truncate">{r.name}</p>
+                            {r.isPromoted && (
+                              <Badge className="bg-primary/10 text-primary border-primary/20 text-[10px]">
+                                Promoted
+                              </Badge>
+                            )}
+                            {r.isPureVeg && (
+                              <Badge variant="outline" className="text-[10px] border-green-300 text-green-700">
+                                Pure veg
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground truncate">{r.cuisine}</p>
+                        </div>
+                      </div>
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-xs">{formatINR(r.costForTwo)}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-xs">
+                        <Star className="h-3 w-3 mr-1 text-amber-500 fill-amber-500" />
+                        {r.rating.toFixed(1)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-xs tabular-nums">
+                      {formatINR(r.costForTwo)}
+                    </TableCell>
                     <TableCell className="text-muted-foreground text-xs">{r.deliveryTime} min</TableCell>
+                    <TableCell className="text-muted-foreground text-xs tabular-nums">{formatINR(r.deliveryFee)}</TableCell>
                     <TableCell>
                       {r.isActive ? (
                         <Badge className="bg-green-100 text-green-700 border-green-200">Active</Badge>
@@ -1537,14 +1666,24 @@ function RestaurantsBody({ user }: { user: AuthUser }) {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="inline-flex gap-1">
+                      <div className="inline-flex items-center gap-1">
+                        {canMenu && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            aria-label={`Manage menu for ${r.name}`}
+                            onClick={() => setMenuFor(r)}
+                          >
+                            <UtensilsCrossed className="h-3.5 w-3.5" /> Menu
+                          </Button>
+                        )}
                         {canEdit && (
                           <Button
                             size="icon"
                             variant="ghost"
                             className="h-8 w-8"
                             aria-label="Edit restaurant"
-                            onClick={() => toast.info(`Demo: would edit ${r.name}`)}
+                            onClick={() => setEditing(r)}
                           >
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
@@ -1555,24 +1694,1109 @@ function RestaurantsBody({ user }: { user: AuthUser }) {
                             variant="ghost"
                             className="h-8 w-8 text-destructive hover:text-destructive"
                             aria-label="Delete restaurant"
-                            onClick={() => toast.info(`Demo: would delete ${r.name}`)}
+                            onClick={() => setDeleting(r)}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         )}
-                        {!canEdit && !canDelete && (
+                        {!canMenu && !canEdit && !canDelete && (
                           <span className="text-xs text-muted-foreground px-2">—</span>
                         )}
                       </div>
                     </TableCell>
                   </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <EditRestaurantDialog
+        target={editing}
+        open={!!editing}
+        onOpenChange={(o) => { if (!o) setEditing(null) }}
+        onSaved={() => { setEditing(null); onMutated() }}
+      />
+
+      <DeleteRestaurantDialog
+        target={deleting}
+        open={!!deleting}
+        onOpenChange={(o) => { if (!o) setDeleting(null) }}
+        onSaved={() => { setDeleting(null); onMutated() }}
+      />
+
+      <MenuSheet
+        restaurant={menuFor}
+        open={!!menuFor}
+        onOpenChange={(o) => { if (!o) setMenuFor(null) }}
+        user={user}
+      />
+    </>
+  )
+}
+
+function useCitiesFetcher(open: boolean) {
+  const [cities, setCities] = useState<CityListItem[]>([])
+  useEffect(() => {
+    if (!open) return
+    let mounted = true
+    fetch('/api/admin/cities')
+      .then(async (r) => {
+        if (!mounted) return
+        if (!r.ok) return
+        const json = await r.json()
+        if (!mounted) return
+        if (json.success) setCities(json.cities as CityListItem[])
+      })
+      .catch(() => { /* best-effort enrichment */ })
+    return () => { mounted = false }
+  }, [open])
+  return cities
+}
+
+function AddRestaurantDialog({ open, onOpenChange, onSaved }: {
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  onSaved: () => void
+}) {
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [cuisine, setCuisine] = useState('')
+  const [imageUrl, setImageUrl] = useState('')
+  const [costForTwo, setCostForTwo] = useState('300')
+  const [deliveryTime, setDeliveryTime] = useState('30')
+  const [deliveryFee, setDeliveryFee] = useState('20')
+  const [priceLevel, setPriceLevel] = useState('1')
+  const [isPureVeg, setIsPureVeg] = useState(false)
+  const [address, setAddress] = useState('')
+  const [cityId, setCityId] = useState('')
+  const [latitude, setLatitude] = useState('')
+  const [longitude, setLongitude] = useState('')
+  const [busy, setBusy] = useState(false)
+  const cities = useCitiesFetcher(open)
+
+  const reset = () => {
+    setName(''); setDescription(''); setCuisine(''); setImageUrl('')
+    setCostForTwo('300'); setDeliveryTime('30'); setDeliveryFee('20'); setPriceLevel('1')
+    setIsPureVeg(false); setAddress(''); setCityId(''); setLatitude(''); setLongitude('')
+  }
+
+  const submit = async () => {
+    if (!name.trim() || !description.trim() || !cuisine.trim() || !cityId) {
+      toast.error('Name, description, cuisine, and city are required')
+      return
+    }
+    setBusy(true)
+    try {
+      const res = await fetch('/api/admin/restaurants', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim(),
+          description: description.trim(),
+          cuisine: cuisine.trim(),
+          imageUrl: imageUrl.trim() || undefined,
+          costForTwo: Number(costForTwo) || 300,
+          deliveryTime: Number(deliveryTime) || 30,
+          deliveryFee: Number(deliveryFee) || 20,
+          priceLevel: Number(priceLevel) || 1,
+          isPureVeg,
+          address: address.trim(),
+          cityId,
+          latitude: latitude ? Number(latitude) : undefined,
+          longitude: longitude ? Number(longitude) : undefined,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error || 'Failed to create restaurant')
+      toast.success('Restaurant onboarded')
+      reset()
+      onOpenChange(false)
+      onSaved()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to create restaurant')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Add restaurant</DialogTitle>
+          <DialogDescription>
+            Onboard a new restaurant partner. Requires <code className="rounded bg-muted px-1 py-0.5 text-xs">restaurants.create</code>.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="ar-name">Name <span className="text-destructive">*</span></Label>
+            <Input id="ar-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Paradise Food Court" />
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="ar-desc">Description <span className="text-destructive">*</span></Label>
+            <Textarea id="ar-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Brief tagline or description" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ar-cuisine">Cuisine <span className="text-destructive">*</span></Label>
+            <Input id="ar-cuisine" value={cuisine} onChange={(e) => setCuisine(e.target.value)} placeholder="North Indian, Biryani" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>City <span className="text-destructive">*</span></Label>
+            <Select value={cityId} onValueChange={setCityId}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={cities.length === 0 ? 'No cities available' : 'Select city'} />
+              </SelectTrigger>
+              <SelectContent>
+                {cities.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name} ({c.restaurantCount})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="ar-image">Image URL</Label>
+            <Input id="ar-image" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://..." />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ar-cost">Cost for two (₹)</Label>
+            <Input id="ar-cost" type="number" min={0} value={costForTwo} onChange={(e) => setCostForTwo(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ar-fee">Delivery fee (₹)</Label>
+            <Input id="ar-fee" type="number" min={0} value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ar-time">Delivery time (min)</Label>
+            <Input id="ar-time" type="number" min={0} value={deliveryTime} onChange={(e) => setDeliveryTime(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Price level</Label>
+            <Select value={priceLevel} onValueChange={setPriceLevel}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Price level" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">₹ — Inexpensive</SelectItem>
+                <SelectItem value="2">₹₹ — Moderate</SelectItem>
+                <SelectItem value="3">₹₹₹ — Expensive</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="ar-address">Address</Label>
+            <Input id="ar-address" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Street address" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ar-lat">Latitude (optional)</Label>
+            <Input id="ar-lat" type="number" step="any" value={latitude} onChange={(e) => setLatitude(e.target.value)} placeholder="17.4126" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ar-lng">Longitude (optional)</Label>
+            <Input id="ar-lng" type="number" step="any" value={longitude} onChange={(e) => setLongitude(e.target.value)} placeholder="78.4396" />
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-3 sm:col-span-2">
+            <div>
+              <p className="text-sm font-medium">Pure veg</p>
+              <p className="text-xs text-muted-foreground">Show the green veg-only badge on this restaurant.</p>
+            </div>
+            <Switch checked={isPureVeg} onCheckedChange={setIsPureVeg} aria-label="Pure veg" />
+          </div>
         </div>
-      </CardContent>
-    </Card>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
+          <Button onClick={submit} disabled={busy}>
+            {busy ? <BusySpinner /> : <Plus className="h-4 w-4" />} Create restaurant
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function EditRestaurantDialog({ target, open, onOpenChange, onSaved }: {
+  target: Restaurant | null
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  onSaved: () => void
+}) {
+  const [name, setName] = useState(target?.name ?? '')
+  const [description, setDescription] = useState(target?.description ?? '')
+  const [cuisine, setCuisine] = useState(target?.cuisine ?? '')
+  const [imageUrl, setImageUrl] = useState(target?.imageUrl ?? '')
+  const [costForTwo, setCostForTwo] = useState(String(target?.costForTwo ?? 300))
+  const [deliveryTime, setDeliveryTime] = useState(String(target?.deliveryTime ?? 30))
+  const [deliveryFee, setDeliveryFee] = useState(String(target?.deliveryFee ?? 20))
+  const [priceLevel, setPriceLevel] = useState(String(target?.priceLevel ?? 1))
+  const [isPureVeg, setIsPureVeg] = useState(target?.isPureVeg ?? false)
+  const [isActive, setIsActive] = useState(target?.isActive ?? true)
+  const [isPromoted, setIsPromoted] = useState(target?.isPromoted ?? false)
+  const [offer, setOffer] = useState(target?.offer ?? '')
+  const [address, setAddress] = useState(target?.address ?? '')
+  const [latitude, setLatitude] = useState(target?.latitude ? String(target.latitude) : '')
+  const [longitude, setLongitude] = useState(target?.longitude ? String(target.longitude) : '')
+  const [prevTarget, setPrevTarget] = useState<Restaurant | null>(target)
+  if (target !== prevTarget) {
+    setPrevTarget(target)
+    setName(target?.name ?? '')
+    setDescription(target?.description ?? '')
+    setCuisine(target?.cuisine ?? '')
+    setImageUrl(target?.imageUrl ?? '')
+    setCostForTwo(String(target?.costForTwo ?? 300))
+    setDeliveryTime(String(target?.deliveryTime ?? 30))
+    setDeliveryFee(String(target?.deliveryFee ?? 20))
+    setPriceLevel(String(target?.priceLevel ?? 1))
+    setIsPureVeg(target?.isPureVeg ?? false)
+    setIsActive(target?.isActive ?? true)
+    setIsPromoted(target?.isPromoted ?? false)
+    setOffer(target?.offer ?? '')
+    setAddress(target?.address ?? '')
+    setLatitude(target?.latitude ? String(target.latitude) : '')
+    setLongitude(target?.longitude ? String(target.longitude) : '')
+  }
+  const [busy, setBusy] = useState(false)
+
+  const submit = async () => {
+    if (!target) return
+    if (!name.trim() || !description.trim() || !cuisine.trim()) {
+      toast.error('Name, description, and cuisine are required')
+      return
+    }
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/admin/restaurants/${encodeURIComponent(target.id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim(),
+          description: description.trim(),
+          cuisine: cuisine.trim(),
+          imageUrl: imageUrl.trim() || undefined,
+          costForTwo: Number(costForTwo) || undefined,
+          deliveryTime: Number(deliveryTime) || undefined,
+          deliveryFee: Number(deliveryFee) || undefined,
+          priceLevel: Number(priceLevel) || undefined,
+          isPureVeg,
+          isActive,
+          isPromoted,
+          offer: offer.trim() || null,
+          address: address.trim(),
+          latitude: latitude ? Number(latitude) : null,
+          longitude: longitude ? Number(longitude) : null,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error || 'Failed to update restaurant')
+      toast.success('Restaurant updated')
+      onOpenChange(false)
+      onSaved()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to update restaurant')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Edit restaurant — {target?.name}</DialogTitle>
+          <DialogDescription>
+            Update profile, status, and promotions. Requires <code className="rounded bg-muted px-1 py-0.5 text-xs">restaurants.update</code>.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="er-name">Name <span className="text-destructive">*</span></Label>
+            <Input id="er-name" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="er-desc">Description <span className="text-destructive">*</span></Label>
+            <Textarea id="er-desc" value={description} onChange={(e) => setDescription(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="er-cuisine">Cuisine <span className="text-destructive">*</span></Label>
+            <Input id="er-cuisine" value={cuisine} onChange={(e) => setCuisine(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="er-image">Image URL</Label>
+            <Input id="er-image" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="er-cost">Cost for two (₹)</Label>
+            <Input id="er-cost" type="number" min={0} value={costForTwo} onChange={(e) => setCostForTwo(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="er-fee">Delivery fee (₹)</Label>
+            <Input id="er-fee" type="number" min={0} value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="er-time">Delivery time (min)</Label>
+            <Input id="er-time" type="number" min={0} value={deliveryTime} onChange={(e) => setDeliveryTime(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Price level</Label>
+            <Select value={priceLevel} onValueChange={setPriceLevel}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Price level" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">₹ — Inexpensive</SelectItem>
+                <SelectItem value="2">₹₹ — Moderate</SelectItem>
+                <SelectItem value="3">₹₹₹ — Expensive</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="er-address">Address</Label>
+            <Input id="er-address" value={address} onChange={(e) => setAddress(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="er-lat">Latitude</Label>
+            <Input id="er-lat" type="number" step="any" value={latitude} onChange={(e) => setLatitude(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="er-lng">Longitude</Label>
+            <Input id="er-lng" type="number" step="any" value={longitude} onChange={(e) => setLongitude(e.target.value)} />
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="er-offer">Offer</Label>
+            <Input id="er-offer" value={offer} onChange={(e) => setOffer(e.target.value)} placeholder="50% off up to ₹100" />
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">Active</p>
+              <p className="text-xs text-muted-foreground">Inactive restaurants are hidden from customers.</p>
+            </div>
+            <Switch checked={isActive} onCheckedChange={setIsActive} aria-label="Active" />
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">Promoted</p>
+              <p className="text-xs text-muted-foreground">Show a promoted badge in listings.</p>
+            </div>
+            <Switch checked={isPromoted} onCheckedChange={setIsPromoted} aria-label="Promoted" />
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-3 sm:col-span-2">
+            <div>
+              <p className="text-sm font-medium">Pure veg</p>
+              <p className="text-xs text-muted-foreground">Show the green veg-only badge on this restaurant.</p>
+            </div>
+            <Switch checked={isPureVeg} onCheckedChange={setIsPureVeg} aria-label="Pure veg" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
+          <Button onClick={submit} disabled={busy}>
+            {busy ? <BusySpinner /> : <Pencil className="h-4 w-4" />} Save changes
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function DeleteRestaurantDialog({ target, open, onOpenChange, onSaved }: {
+  target: Restaurant | null
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  onSaved: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+
+  const confirm = async () => {
+    if (!target) return
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/admin/restaurants/${encodeURIComponent(target.id)}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error || 'Failed to delete restaurant')
+      toast.success('Restaurant removed')
+      onOpenChange(false)
+      onSaved()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to delete restaurant')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete restaurant?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This will permanently delete <strong>{target?.name}</strong> and its menu. Existing orders will be preserved but unlinked from this restaurant.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            disabled={busy}
+            onClick={confirm}
+          >
+            {busy ? <BusySpinner /> : <Trash2 className="h-4 w-4" />} Delete restaurant
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
+
+function MenuSheet({ restaurant, open, onOpenChange, user }: {
+  restaurant: Restaurant | null
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  user: AuthUser
+}) {
+  // Keep the last non-null restaurant so the close animation shows stale content
+  // rather than empty content.
+  const [displayed, setDisplayed] = useState<Restaurant | null>(restaurant)
+  if (restaurant && restaurant.id !== displayed?.id) {
+    setDisplayed(restaurant)
+  }
+  const current = displayed
+
+  const [categories, setCategories] = useState<MenuCategory[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [forbidden, setForbidden] = useState(false)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [newCategoryName, setNewCategoryName] = useState('')
+  const [addingCategory, setAddingCategory] = useState(false)
+  const [addItemFor, setAddItemFor] = useState<MenuCategory | null>(null)
+  const [editingItem, setEditingItem] = useState<MenuItem | null>(null)
+  const [deletingItem, setDeletingItem] = useState<MenuItem | null>(null)
+  const [deletingCategory, setDeletingCategory] = useState<MenuCategory | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [reloadToken, setReloadToken] = useState(0)
+
+  const reload = () => {
+    setLoading(true)
+    setError(null)
+    setReloadToken((t) => t + 1)
+  }
+
+  useEffect(() => {
+    if (!open || !current) return
+    let mounted = true
+    fetch(`/api/admin/menu?restaurantId=${encodeURIComponent(current.id)}`)
+      .then(async (r) => {
+        if (!mounted) return
+        if (r.status === 403) {
+          setForbidden(true)
+          setLoading(false)
+          return
+        }
+        const json = await r.json()
+        if (!mounted) return
+        if (json.success) {
+          setCategories(json.categories as MenuCategory[])
+          setExpanded((prev) => {
+            const next = new Set(prev)
+            for (const c of (json.categories as MenuCategory[])) next.add(c.id)
+            return next
+          })
+        } else setError(json.error || 'Failed to load menu')
+        setLoading(false)
+      })
+      .catch((e: unknown) => {
+        if (!mounted) return
+        setError(e instanceof Error ? e.message : 'Network error')
+        setLoading(false)
+      })
+    return () => { mounted = false }
+  }, [open, current, reloadToken])
+
+  const toggleCat = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const addCategory = async () => {
+    if (!current || !newCategoryName.trim()) return
+    setAddingCategory(true)
+    try {
+      const res = await fetch('/api/admin/menu', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'category',
+          name: newCategoryName.trim(),
+          restaurantId: current.id,
+          displayOrder: categories.length,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error || 'Failed to add category')
+      toast.success('Category added')
+      setNewCategoryName('')
+      reload()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to add category')
+    } finally {
+      setAddingCategory(false)
+    }
+  }
+
+  const deleteItem = async (item: MenuItem) => {
+    setBusyId(item.id)
+    try {
+      const res = await fetch(`/api/admin/menu/items/${encodeURIComponent(item.id)}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error || 'Failed to delete item')
+      toast.success('Item deleted')
+      setDeletingItem(null)
+      reload()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to delete item')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const deleteCategory = async (cat: MenuCategory) => {
+    setBusyId(cat.id)
+    try {
+      const res = await fetch(`/api/admin/menu/categories/${encodeURIComponent(cat.id)}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error || 'Failed to delete category')
+      toast.success('Category deleted')
+      setDeletingCategory(null)
+      reload()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to delete category')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const canCreate = canDo(user, 'menus.create')
+  const canUpdate = canDo(user, 'menus.update')
+  const canDelete = canDo(user, 'menus.delete')
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="w-full sm:max-w-2xl p-0 flex flex-col">
+        <SheetHeader className="p-4 border-b shrink-0">
+          <SheetTitle className="flex items-center gap-2">
+            <UtensilsCrossed className="h-4 w-4 text-primary" />
+            Menu — {current?.name}
+          </SheetTitle>
+          <SheetDescription>
+            Manage categories, items, and availability. Each action is gated by your <code className="rounded bg-muted px-1 py-0.5 text-xs">menus.*</code> permissions.
+          </SheetDescription>
+        </SheetHeader>
+
+        <ScrollArea className="flex-1 min-h-0">
+          <div className="p-4 space-y-4">
+            {canCreate && (
+              <div className="flex gap-2">
+                <Input
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  placeholder="New category name (e.g. Starters)"
+                  onKeyDown={(e) => { if (e.key === 'Enter') addCategory() }}
+                />
+                <Button onClick={addCategory} disabled={addingCategory || !newCategoryName.trim()}>
+                  {addingCategory ? <BusySpinner /> : <Plus className="h-4 w-4" />} Add
+                </Button>
+              </div>
+            )}
+
+            {loading && (
+              <div className="space-y-2">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-16 rounded-xl" />
+                ))}
+              </div>
+            )}
+
+            {forbidden && (
+              <Card className="rounded-2xl">
+                <CardContent className="p-6 text-center text-sm text-muted-foreground">
+                  You lack the <code className="rounded bg-muted px-1 py-0.5 text-xs">menus.read</code> permission.
+                </CardContent>
+              </Card>
+            )}
+
+            {!loading && !forbidden && error && <ErrorCard message={error} onRetry={reload} />}
+
+            {!loading && !forbidden && !error && categories.length === 0 && (
+              <Card className="rounded-2xl">
+                <CardContent className="p-8 text-center text-sm text-muted-foreground">
+                  No menu categories yet. {canCreate ? 'Add one above to get started.' : ''}
+                </CardContent>
+              </Card>
+            )}
+
+            {!loading && !forbidden && !error && categories.map((cat) => {
+              const isOpen = expanded.has(cat.id)
+              return (
+                <Card key={cat.id} className="rounded-2xl">
+                  <CardHeader className="p-3 flex-row items-center justify-between space-y-0">
+                    <button
+                      type="button"
+                      onClick={() => toggleCat(cat.id)}
+                      className="flex items-center gap-2 flex-1 text-left min-w-0"
+                      aria-expanded={isOpen}
+                    >
+                      {isOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+                      <CardTitle className="text-sm truncate">{cat.name}</CardTitle>
+                      <Badge variant="secondary" className="text-[10px] shrink-0">{cat.items.length} items</Badge>
+                    </button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {canCreate && (
+                        <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setAddItemFor(cat)}>
+                          <Plus className="h-3.5 w-3.5" /> Item
+                        </Button>
+                      )}
+                      {canDelete && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-destructive hover:text-destructive"
+                          aria-label="Delete category"
+                          disabled={busyId === cat.id}
+                          onClick={() => setDeletingCategory(cat)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  </CardHeader>
+                  {isOpen && (
+                    <CardContent className="p-0 border-t">
+                      {cat.items.length === 0 ? (
+                        <p className="p-3 text-xs text-muted-foreground">No items in this category.</p>
+                      ) : (
+                        <ul className="divide-y">
+                          {cat.items.map((item) => (
+                            <li key={item.id} className="flex items-start gap-3 p-3">
+                              <span
+                                className={cn(
+                                  'mt-1 h-3 w-3 rounded-sm border shrink-0',
+                                  item.isVeg ? 'bg-green-600 border-green-700' : 'bg-red-600 border-red-700'
+                                )}
+                                aria-label={item.isVeg ? 'Veg' : 'Non-veg'}
+                              />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="font-medium text-sm truncate">{item.name}</p>
+                                  {item.isBestSeller && (
+                                    <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px]">★ Bestseller</Badge>
+                                  )}
+                                  {item.isRecommended && (
+                                    <Badge className="bg-primary/10 text-primary border-primary/20 text-[10px]">Recommended</Badge>
+                                  )}
+                                  {!item.isAvailable && (
+                                    <Badge variant="secondary" className="text-[10px]">Unavailable</Badge>
+                                  )}
+                                </div>
+                                {item.description && (
+                                  <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{item.description}</p>
+                                )}
+                                <p className="text-sm font-semibold mt-1">{formatINR(item.price)}</p>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                {canUpdate && (
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-7 w-7"
+                                    aria-label="Edit item"
+                                    onClick={() => setEditingItem(item)}
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </Button>
+                                )}
+                                {canDelete && (
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-7 w-7 text-destructive hover:text-destructive"
+                                    aria-label="Delete item"
+                                    disabled={busyId === item.id}
+                                    onClick={() => setDeletingItem(item)}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </CardContent>
+                  )}
+                </Card>
+              )
+            })}
+          </div>
+        </ScrollArea>
+
+        <SheetFooter className="p-3 border-t shrink-0">
+          <SheetClose asChild>
+            <Button variant="outline" className="w-full">Close</Button>
+          </SheetClose>
+        </SheetFooter>
+
+        {current && (
+          <>
+            <AddItemDialog
+              restaurantId={current.id}
+              category={addItemFor}
+              open={!!addItemFor}
+              onOpenChange={(o) => { if (!o) setAddItemFor(null) }}
+              onSaved={() => { setAddItemFor(null); reload() }}
+            />
+            <EditItemDialog
+              target={editingItem}
+              open={!!editingItem}
+              onOpenChange={(o) => { if (!o) setEditingItem(null) }}
+              onSaved={() => { setEditingItem(null); reload() }}
+            />
+            <AlertDialog open={!!deletingItem} onOpenChange={(o) => { if (!o) setDeletingItem(null) }}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete menu item?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently remove <strong>{deletingItem?.name}</strong> from the menu. This cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={busyId === deletingItem?.id}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    disabled={busyId === deletingItem?.id}
+                    onClick={() => deletingItem && deleteItem(deletingItem)}
+                  >
+                    {busyId === deletingItem?.id ? <BusySpinner /> : <Trash2 className="h-4 w-4" />} Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            <AlertDialog open={!!deletingCategory} onOpenChange={(o) => { if (!o) setDeletingCategory(null) }}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete category &amp; all items?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Deleting <strong>{deletingCategory?.name}</strong> will remove all of its menu items. This cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={busyId === deletingCategory?.id}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    disabled={busyId === deletingCategory?.id}
+                    onClick={() => deletingCategory && deleteCategory(deletingCategory)}
+                  >
+                    {busyId === deletingCategory?.id ? <BusySpinner /> : <Trash2 className="h-4 w-4" />} Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </>
+        )}
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+function AddItemDialog({ restaurantId, category, open, onOpenChange, onSaved }: {
+  restaurantId: string
+  category: MenuCategory | null
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  onSaved: () => void
+}) {
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [price, setPrice] = useState('')
+  const [imageUrl, setImageUrl] = useState('')
+  const [isVeg, setIsVeg] = useState(true)
+  const [isBestSeller, setIsBestSeller] = useState(false)
+  const [isRecommended, setIsRecommended] = useState(false)
+  const [spiceLevel, setSpiceLevel] = useState('0')
+  const [busy, setBusy] = useState(false)
+
+  const reset = () => {
+    setName(''); setDescription(''); setPrice(''); setImageUrl('')
+    setIsVeg(true); setIsBestSeller(false); setIsRecommended(false); setSpiceLevel('0')
+  }
+
+  const submit = async () => {
+    if (!category) return
+    if (!name.trim()) {
+      toast.error('Item name is required')
+      return
+    }
+    setBusy(true)
+    try {
+      const res = await fetch('/api/admin/menu', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'item',
+          name: name.trim(),
+          description: description.trim(),
+          price: Number(price) || 0,
+          imageUrl: imageUrl.trim() || null,
+          isVeg,
+          isBestSeller,
+          isRecommended,
+          spiceLevel: Number(spiceLevel) || 0,
+          menuCategoryId: category.id,
+          restaurantId,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error || 'Failed to add item')
+      toast.success('Item added')
+      reset()
+      onOpenChange(false)
+      onSaved()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to add item')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Add menu item — {category?.name}</DialogTitle>
+          <DialogDescription>
+            Create a new item in this category. Requires <code className="rounded bg-muted px-1 py-0.5 text-xs">menus.create</code>.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="ai-name">Name <span className="text-destructive">*</span></Label>
+            <Input id="ai-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Chicken Biryani" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ai-desc">Description</Label>
+            <Textarea id="ai-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Brief description" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="ai-price">Price (₹)</Label>
+              <Input id="ai-price" type="number" min={0} value={price} onChange={(e) => setPrice(e.target.value)} placeholder="249" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Spice level</Label>
+              <Select value={spiceLevel} onValueChange={setSpiceLevel}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Spice level" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">None</SelectItem>
+                  <SelectItem value="1">Mild</SelectItem>
+                  <SelectItem value="2">Medium</SelectItem>
+                  <SelectItem value="3">Spicy</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ai-image">Image URL</Label>
+            <Input id="ai-image" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://..." />
+          </div>
+          <div className="grid grid-cols-1 gap-2">
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <p className="text-sm font-medium">Veg</p>
+                <p className="text-xs text-muted-foreground">Show the green veg indicator.</p>
+              </div>
+              <Switch checked={isVeg} onCheckedChange={setIsVeg} aria-label="Veg" />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <p className="text-sm font-medium">Bestseller</p>
+                <p className="text-xs text-muted-foreground">Highlight as a top seller.</p>
+              </div>
+              <Switch checked={isBestSeller} onCheckedChange={setIsBestSeller} aria-label="Bestseller" />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <p className="text-sm font-medium">Recommended</p>
+                <p className="text-xs text-muted-foreground">Show a recommended badge.</p>
+              </div>
+              <Switch checked={isRecommended} onCheckedChange={setIsRecommended} aria-label="Recommended" />
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
+          <Button onClick={submit} disabled={busy}>
+            {busy ? <BusySpinner /> : <Plus className="h-4 w-4" />} Add item
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function EditItemDialog({ target, open, onOpenChange, onSaved }: {
+  target: MenuItem | null
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  onSaved: () => void
+}) {
+  const [name, setName] = useState(target?.name ?? '')
+  const [description, setDescription] = useState(target?.description ?? '')
+  const [price, setPrice] = useState(target ? String(target.price) : '')
+  const [imageUrl, setImageUrl] = useState(target?.imageUrl ?? '')
+  const [isVeg, setIsVeg] = useState(target?.isVeg ?? true)
+  const [isBestSeller, setIsBestSeller] = useState(target?.isBestSeller ?? false)
+  const [isRecommended, setIsRecommended] = useState(target?.isRecommended ?? false)
+  const [isAvailable, setIsAvailable] = useState(target?.isAvailable ?? true)
+  const [spiceLevel, setSpiceLevel] = useState(String(target?.spiceLevel ?? 0))
+  const [prevTarget, setPrevTarget] = useState<MenuItem | null>(target)
+  if (target !== prevTarget) {
+    setPrevTarget(target)
+    setName(target?.name ?? '')
+    setDescription(target?.description ?? '')
+    setPrice(target ? String(target.price) : '')
+    setImageUrl(target?.imageUrl ?? '')
+    setIsVeg(target?.isVeg ?? true)
+    setIsBestSeller(target?.isBestSeller ?? false)
+    setIsRecommended(target?.isRecommended ?? false)
+    setIsAvailable(target?.isAvailable ?? true)
+    setSpiceLevel(String(target?.spiceLevel ?? 0))
+  }
+  const [busy, setBusy] = useState(false)
+
+  const submit = async () => {
+    if (!target) return
+    if (!name.trim()) {
+      toast.error('Item name is required')
+      return
+    }
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/admin/menu/items/${encodeURIComponent(target.id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim(),
+          description: description.trim(),
+          price: Number(price) || 0,
+          imageUrl: imageUrl.trim() || null,
+          isVeg,
+          isBestSeller,
+          isRecommended,
+          isAvailable,
+          spiceLevel: Number(spiceLevel) || 0,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error || 'Failed to update item')
+      toast.success('Item updated')
+      onOpenChange(false)
+      onSaved()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to update item')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Edit item — {target?.name}</DialogTitle>
+          <DialogDescription>
+            Update item details and availability. Requires <code className="rounded bg-muted px-1 py-0.5 text-xs">menus.update</code>.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="ei-name">Name <span className="text-destructive">*</span></Label>
+            <Input id="ei-name" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ei-desc">Description</Label>
+            <Textarea id="ei-desc" value={description} onChange={(e) => setDescription(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="ei-price">Price (₹)</Label>
+              <Input id="ei-price" type="number" min={0} value={price} onChange={(e) => setPrice(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Spice level</Label>
+              <Select value={spiceLevel} onValueChange={setSpiceLevel}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Spice level" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">None</SelectItem>
+                  <SelectItem value="1">Mild</SelectItem>
+                  <SelectItem value="2">Medium</SelectItem>
+                  <SelectItem value="3">Spicy</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ei-image">Image URL</Label>
+            <Input id="ei-image" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-1 gap-2">
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <p className="text-sm font-medium">Veg</p>
+                <p className="text-xs text-muted-foreground">Show the green veg indicator.</p>
+              </div>
+              <Switch checked={isVeg} onCheckedChange={setIsVeg} aria-label="Veg" />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <p className="text-sm font-medium">Bestseller</p>
+                <p className="text-xs text-muted-foreground">Highlight as a top seller.</p>
+              </div>
+              <Switch checked={isBestSeller} onCheckedChange={setIsBestSeller} aria-label="Bestseller" />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <p className="text-sm font-medium">Recommended</p>
+                <p className="text-xs text-muted-foreground">Show a recommended badge.</p>
+              </div>
+              <Switch checked={isRecommended} onCheckedChange={setIsRecommended} aria-label="Recommended" />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <p className="text-sm font-medium">Available</p>
+                <p className="text-xs text-muted-foreground">When off, customers can&apos;t order this item.</p>
+              </div>
+              <Switch checked={isAvailable} onCheckedChange={setIsAvailable} aria-label="Available" />
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
+          <Button onClick={submit} disabled={busy}>
+            {busy ? <BusySpinner /> : <Pencil className="h-4 w-4" />} Save changes
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -1688,61 +2912,495 @@ function OrdersBody({ user }: { user: AuthUser }) {
 // ============================================================
 // Riders module
 // ============================================================
+interface RiderListItem {
+  id: string
+  name: string
+  phone: string
+  vehicle: string
+  rating: number
+  totalDeliveries: number
+  isOnline: boolean
+  createdAt: string
+}
+
 function RidersModule({ user }: { user: AuthUser }) {
+  const [reloadToken, setReloadToken] = useState(0)
+  const [addOpen, setAddOpen] = useState(false)
+
   return (
     <div>
       <ModuleHeader
         title="Riders"
-        description="Manage delivery partners."
+        description="Manage delivery partners — onboard, edit, toggle online status, remove."
         icon={Bike}
         action={
           canDo(user, 'riders.create') ? (
-            <Button size="sm" onClick={() => toast.info('Demo: would open rider onboarding')}>
+            <Button size="sm" onClick={() => setAddOpen(true)}>
               <Plus className="h-3.5 w-3.5" /> Add rider
             </Button>
           ) : null
         }
       />
       <ParticleScopeBanner user={user} module="riders" />
-      <RidersBody />
+      <AddRiderDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        onSaved={() => setReloadToken((t) => t + 1)}
+      />
+      <RidersBody
+        key={reloadToken}
+        user={user}
+        onMutated={() => setReloadToken((t) => t + 1)}
+        onAdd={() => setAddOpen(true)}
+      />
     </div>
   )
 }
 
-function RidersBody() {
-  const [riderCount, setRiderCount] = useState<number | null>(null)
+function RidersBody({ user, onMutated, onAdd }: {
+  user: AuthUser
+  onMutated: () => void
+  onAdd: () => void
+}) {
+  const [riders, setRiders] = useState<RiderListItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [forbidden, setForbidden] = useState(false)
+  const [editing, setEditing] = useState<RiderListItem | null>(null)
+  const [deleting, setDeleting] = useState<RiderListItem | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
 
   useEffect(() => {
     let mounted = true
-    fetch('/api/admin/stats')
+    fetch('/api/admin/riders')
       .then(async (r) => {
         if (!mounted) return
-        if (r.status === 403) return
+        if (r.status === 403) {
+          setForbidden(true)
+          setLoading(false)
+          return
+        }
         const json = await r.json()
         if (!mounted) return
-        if (json.success) setRiderCount(json.stats.totalRiders as number)
+        if (json.success) setRiders(json.riders as RiderListItem[])
+        else setError(json.error || 'Failed to load riders')
+        setLoading(false)
       })
-      .catch(() => { /* swallow — this is a best-effort enrichment */ })
+      .catch((e: unknown) => {
+        if (!mounted) return
+        setError(e instanceof Error ? e.message : 'Network error')
+        setLoading(false)
+      })
     return () => { mounted = false }
   }, [])
 
-  return (
-    <Card className="rounded-2xl">
-      <CardContent className="p-8 flex flex-col items-center text-center gap-4">
-        <div className="rounded-full bg-primary/10 p-3">
-          <Bike className="h-8 w-8 text-primary" />
-        </div>
-        <div>
-          <h3 className="text-lg font-semibold">Riders module — coming soon</h3>
-          <p className="text-sm text-muted-foreground mt-1 max-w-md">
-            The dedicated riders list API isn&apos;t wired up yet.
-            {riderCount !== null && (
-              <> The platform currently has <strong className="text-foreground">{riderCount}</strong> delivery partners.</>
-            )}
+  const toggleOnline = async (r: RiderListItem) => {
+    setBusyId(r.id)
+    try {
+      const res = await fetch(`/api/admin/riders/${encodeURIComponent(r.id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isOnline: !r.isOnline }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error || 'Failed to update')
+      toast.success(`Rider marked ${!r.isOnline ? 'online' : 'offline'}`)
+      onMutated()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to update rider')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-14 rounded-xl" />
+        ))}
+      </div>
+    )
+  }
+
+  if (forbidden) {
+    return (
+      <Card className="rounded-2xl">
+        <CardContent className="p-8 flex flex-col items-center text-center gap-3">
+          <Lock className="h-8 w-8 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">
+            You lack the <code className="rounded bg-muted px-1 py-0.5 text-xs">riders.read</code> permission.
           </p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (error) return <ErrorCard message={error} onRetry={onMutated} />
+
+  if (riders.length === 0) {
+    return (
+      <Card className="rounded-2xl">
+        <CardContent className="p-8 flex flex-col items-center text-center gap-3">
+          <div className="rounded-full bg-primary/10 p-3">
+            <Bike className="h-8 w-8 text-primary" />
+          </div>
+          <h3 className="text-lg font-semibold">No riders yet</h3>
+          <p className="text-sm text-muted-foreground max-w-md">
+            Onboard your first delivery partner to start fulfilling orders.
+          </p>
+          {canDo(user, 'riders.create') && (
+            <Button size="sm" onClick={onAdd}>
+              <Plus className="h-3.5 w-3.5" /> Add rider
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const canEdit = canDo(user, 'riders.update')
+  const canDelete = canDo(user, 'riders.delete')
+
+  return (
+    <>
+      <Card className="rounded-2xl">
+        <CardContent className="p-0 overflow-hidden">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Rider</TableHead>
+                  <TableHead>Phone</TableHead>
+                  <TableHead>Vehicle</TableHead>
+                  <TableHead>Rating</TableHead>
+                  <TableHead>Deliveries</TableHead>
+                  <TableHead>Online</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {riders.map((r) => {
+                  const isBusy = busyId === r.id
+                  return (
+                    <TableRow key={r.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-2.5 min-w-[160px]">
+                          <Avatar className="h-8 w-8">
+                            <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+                              {initials(r.name)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <p className="font-medium truncate">{r.name}</p>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground font-mono text-xs">
+                        <span className="inline-flex items-center gap-1">
+                          <Phone className="h-3 w-3" /> {r.phone}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-xs">
+                        <span className="inline-flex items-center gap-1">
+                          <Navigation className="h-3 w-3" /> {r.vehicle}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          <Star className="h-3 w-3 mr-1 text-amber-500 fill-amber-500" />
+                          {r.rating.toFixed(1)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-xs tabular-nums">{r.totalDeliveries}</TableCell>
+                      <TableCell>
+                        {canEdit ? (
+                          <label className="inline-flex items-center gap-2 cursor-pointer">
+                            <Switch
+                              checked={r.isOnline}
+                              disabled={isBusy}
+                              onCheckedChange={() => toggleOnline(r)}
+                              aria-label={`Toggle online status for ${r.name}`}
+                            />
+                            <span className={cn('text-xs', r.isOnline ? 'text-green-700 font-medium' : 'text-muted-foreground')}>
+                              {r.isOnline ? 'Online' : 'Offline'}
+                            </span>
+                          </label>
+                        ) : (
+                          <Badge className={cn('text-xs', r.isOnline ? 'bg-green-100 text-green-700 border-green-200' : 'bg-secondary text-secondary-foreground')}>
+                            {r.isOnline ? 'Online' : 'Offline'}
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-xs">{timeAgo(r.createdAt)}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="inline-flex items-center gap-1">
+                          {canEdit && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8"
+                              aria-label="Edit rider"
+                              onClick={() => setEditing(r)}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          {canDelete && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8 text-destructive hover:text-destructive"
+                              aria-label="Delete rider"
+                              onClick={() => setDeleting(r)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          {!canEdit && !canDelete && (
+                            <span className="text-xs text-muted-foreground px-2">—</span>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <EditRiderDialog
+        target={editing}
+        open={!!editing}
+        onOpenChange={(o) => { if (!o) setEditing(null) }}
+        onSaved={() => { setEditing(null); onMutated() }}
+      />
+
+      <DeleteRiderDialog
+        target={deleting}
+        open={!!deleting}
+        onOpenChange={(o) => { if (!o) setDeleting(null) }}
+        onSaved={() => { setDeleting(null); onMutated() }}
+      />
+    </>
+  )
+}
+
+function AddRiderDialog({ open, onOpenChange, onSaved }: {
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  onSaved: () => void
+}) {
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [vehicle, setVehicle] = useState('Bike')
+  const [busy, setBusy] = useState(false)
+
+  const reset = () => {
+    setName(''); setPhone(''); setVehicle('Bike')
+  }
+
+  const submit = async () => {
+    if (!name.trim() || !phone.trim()) {
+      toast.error('Name and phone are required')
+      return
+    }
+    setBusy(true)
+    try {
+      const res = await fetch('/api/admin/riders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim(),
+          phone: phone.trim(),
+          vehicle: vehicle.trim() || 'Bike',
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error || 'Failed to create rider')
+      toast.success('Rider onboarded')
+      reset()
+      onOpenChange(false)
+      onSaved()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to create rider')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add rider</DialogTitle>
+          <DialogDescription>
+            Onboard a new delivery partner. Requires <code className="rounded bg-muted px-1 py-0.5 text-xs">riders.create</code>.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="ar-name">Name <span className="text-destructive">*</span></Label>
+            <Input id="ar-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Rider name" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ar-phone">Phone <span className="text-destructive">*</span></Label>
+            <Input id="ar-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 98765 43210" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ar-vehicle">Vehicle</Label>
+            <Input id="ar-vehicle" value={vehicle} onChange={(e) => setVehicle(e.target.value)} placeholder="Bike / Scooter / Cycle" />
+          </div>
         </div>
-      </CardContent>
-    </Card>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
+          <Button onClick={submit} disabled={busy}>
+            {busy ? <BusySpinner /> : <Plus className="h-4 w-4" />} Onboard rider
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function EditRiderDialog({ target, open, onOpenChange, onSaved }: {
+  target: RiderListItem | null
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  onSaved: () => void
+}) {
+  const [name, setName] = useState(target?.name ?? '')
+  const [phone, setPhone] = useState(target?.phone ?? '')
+  const [vehicle, setVehicle] = useState(target?.vehicle ?? 'Bike')
+  const [isOnline, setIsOnline] = useState(target?.isOnline ?? false)
+  const [prevTarget, setPrevTarget] = useState<RiderListItem | null>(target)
+  if (target !== prevTarget) {
+    setPrevTarget(target)
+    setName(target?.name ?? '')
+    setPhone(target?.phone ?? '')
+    setVehicle(target?.vehicle ?? 'Bike')
+    setIsOnline(target?.isOnline ?? false)
+  }
+  const [busy, setBusy] = useState(false)
+
+  const submit = async () => {
+    if (!target) return
+    if (!name.trim() || !phone.trim()) {
+      toast.error('Name and phone are required')
+      return
+    }
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/admin/riders/${encodeURIComponent(target.id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim(),
+          phone: phone.trim(),
+          vehicle: vehicle.trim() || 'Bike',
+          isOnline,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error || 'Failed to update rider')
+      toast.success('Rider updated')
+      onOpenChange(false)
+      onSaved()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to update rider')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit rider — {target?.name}</DialogTitle>
+          <DialogDescription>
+            Update rider details. Requires <code className="rounded bg-muted px-1 py-0.5 text-xs">riders.update</code>.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="er-name">Name <span className="text-destructive">*</span></Label>
+            <Input id="er-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Rider name" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="er-phone">Phone <span className="text-destructive">*</span></Label>
+            <Input id="er-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 98765 43210" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="er-vehicle">Vehicle</Label>
+            <Input id="er-vehicle" value={vehicle} onChange={(e) => setVehicle(e.target.value)} placeholder="Bike / Scooter / Cycle" />
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">Online status</p>
+              <p className="text-xs text-muted-foreground">Toggle whether this rider is currently available for deliveries.</p>
+            </div>
+            <Switch checked={isOnline} onCheckedChange={setIsOnline} aria-label="Online status" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
+          <Button onClick={submit} disabled={busy}>
+            {busy ? <BusySpinner /> : <Pencil className="h-4 w-4" />} Save changes
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function DeleteRiderDialog({ target, open, onOpenChange, onSaved }: {
+  target: RiderListItem | null
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  onSaved: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+
+  const confirm = async () => {
+    if (!target) return
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/admin/riders/${encodeURIComponent(target.id)}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error || 'Failed to delete rider')
+      toast.success('Rider removed')
+      onOpenChange(false)
+      onSaved()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to delete rider')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete rider?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This will permanently remove <strong>{target?.name}</strong> from the platform. Their past orders will be preserved but unassigned from this rider.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            disabled={busy}
+            onClick={confirm}
+          >
+            {busy ? <BusySpinner /> : <Trash2 className="h-4 w-4" />} Delete rider
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 
