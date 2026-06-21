@@ -1,0 +1,32 @@
+import { NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { getAuthUser, can } from '@/lib/auth'
+
+// GET /api/rider/orders — delivery history for the logged-in rider
+export async function GET() {
+  try {
+    const user = await getAuthUser()
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Authentication required', statusCode: 401 }, { status: 401 })
+    }
+    if (!can(user, 'orders.read')) {
+      return NextResponse.json({ success: false, error: 'Access denied', statusCode: 403 }, { status: 403 })
+    }
+
+    let rider = await db.rider.findFirst({ where: { userId: user.id } })
+    if (!rider) rider = await db.rider.findUnique({ where: { phone: user.phone } })
+    if (!rider) {
+      return NextResponse.json({ success: false, error: 'No rider profile found' }, { status: 404 })
+    }
+
+    const orders = await db.order.findMany({
+      where: { riderId: rider.id },
+      orderBy: { createdAt: 'desc' },
+      include: { restaurant: true, items: true },
+      take: 30,
+    })
+    return NextResponse.json({ success: true, orders })
+  } catch (e: any) {
+    return NextResponse.json({ success: false, error: e.message }, { status: 500 })
+  }
+}

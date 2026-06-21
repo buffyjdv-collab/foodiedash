@@ -57,6 +57,8 @@ model Restaurant {
   address       String
   latitude      Float?
   longitude     Float?
+  ownerUserId   String?  // links to a User with RESTAURANT_OWNER role
+  ownerUser     User?    @relation("RestaurantOwner", fields: [ownerUserId], references: [id])
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -221,6 +223,8 @@ model Rider {
   rating     Float    @default(4.8)
   totalDeliveries Int  @default(0)
   isOnline   Boolean  @default(true)
+  userId     String?  @unique // links to a User with DELIVERY_PARTNER role
+  user       User?    @relation("RiderUser", fields: [userId], references: [id])
   createdAt  DateTime @default(now())
 
   orders Order[]
@@ -238,10 +242,12 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  userRoles UserRole[]
-  sessions  Session[]
-  otpCodes  OtpCode[]
-  orders    Order[]
+  userRoles         UserRole[]
+  sessions          Session[]
+  otpCodes          OtpCode[]
+  orders            Order[]
+  ownedRestaurants  Restaurant[] @relation("RestaurantOwner")
+  riderProfile      Rider?       @relation("RiderUser")
 }
 
 model Role {

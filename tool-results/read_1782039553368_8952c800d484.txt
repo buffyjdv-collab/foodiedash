@@ -1,0 +1,778 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import { useEffect, useState } from 'react'
+     4→     4→import { motion } from 'framer-motion'
+     5→     5→import { toast } from 'sonner'
+     6→     6→import {
+     7→     7→  Bike,
+     8→     8→  Phone,
+     9→     9→  Star,
+    10→    10→  Truck,
+    11→    11→  Package,
+    12→    12→  CheckCircle2,
+    13→    13→  Wallet,
+    14→    14→  Navigation,
+    15→    15→  AlertCircle,
+    16→    16→  RefreshCw,
+    17→    17→  LogIn,
+    18→    18→  Coins,
+    19→    19→  Banknote,
+    20→    20→  Clock,
+    21→    21→  MapPin,
+    22→    22→  ShieldAlert,
+    23→    23→  Receipt,
+    24→    24→} from 'lucide-react'
+    25→    25→
+    26→    26→import { Card, CardContent } from '@/components/ui/card'
+    27→    27→import { Button } from '@/components/ui/button'
+    28→    28→import { Badge } from '@/components/ui/badge'
+    29→    29→import { Switch } from '@/components/ui/switch'
+    30→    30→import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+    31→    31→import { Skeleton } from '@/components/ui/skeleton'
+    32→    32→import { Separator } from '@/components/ui/separator'
+    33→    33→import {
+    34→    34→  Table,
+    35→    35→  TableHeader,
+    36→    36→  TableBody,
+    37→    37→  TableHead,
+    38→    38→  TableRow,
+    39→    39→  TableCell,
+    40→    40→} from '@/components/ui/table'
+    41→    41→import { useAuthStore } from '@/lib/auth-store'
+    42→    42→import { useFoodStore } from '@/lib/store'
+    43→    43→import { formatINR, timeAgo } from '@/lib/format'
+    44→    44→import { cn } from '@/lib/utils'
+    45→    45→import type { Order } from '@/lib/types'
+    46→    46→
+    47→    47→// ---------------------------------------------------------------------------
+    48→    48→// Types (mirror of the /api/rider/dashboard payload)
+    49→    49→// ---------------------------------------------------------------------------
+    50→    50→
+    51→    51→interface RiderDTO {
+    52→    52→  id: string
+    53→    53→  name: string
+    54→    54→  phone: string
+    55→    55→  vehicle: string
+    56→    56→  rating: number
+    57→    57→  isOnline: boolean
+    58→    58→  totalDeliveries: number
+    59→    59→}
+    60→    60→
+    61→    61→interface RiderStats {
+    62→    62→  activeDeliveries: number
+    63→    63→  completedToday: number
+    64→    64→  totalCompleted: number
+    65→    65→  totalEarnings: number
+    66→    66→  deliveryEarnings: number
+    67→    67→  tipEarnings: number
+    68→    68→}
+    69→    69→
+    70→    70→interface DashboardData {
+    71→    71→  rider: RiderDTO
+    72→    72→  stats: RiderStats
+    73→    73→  activeDeliveries: Order[]
+    74→    74→  recentOrders: Order[]
+    75→    75→}
+    76→    76→
+    77→    77→// ---------------------------------------------------------------------------
+    78→    78→// Helpers
+    79→    79→// ---------------------------------------------------------------------------
+    80→    80→
+    81→    81→function initials(name: string): string {
+    82→    82→  return (
+    83→    83→    name
+    84→    84→      .split(' ')
+    85→    85→      .map((n) => n[0] || '')
+    86→    86→      .join('')
+    87→    87→      .slice(0, 2)
+    88→    88→      .toUpperCase() || '?'
+    89→    89→  )
+    90→    90→}
+    91→    91→
+    92→    92→function statusBadge(status: string): { className: string; label: string } {
+    93→    93→  switch (status) {
+    94→    94→    case 'DELIVERED':
+    95→    95→      return {
+    96→    96→        className: 'bg-green-100 text-green-700 border-green-200',
+    97→    97→        label: 'Delivered',
+    98→    98→      }
+    99→    99→    case 'CANCELLED':
+   100→   100→      return {
+   101→   101→        className: 'bg-red-100 text-red-700 border-red-200',
+   102→   102→        label: 'Cancelled',
+   103→   103→      }
+   104→   104→    default:
+   105→   105→      return {
+   106→   106→        className: 'bg-primary/10 text-primary border-primary/20',
+   107→   107→        label:
+   108→   108→          status.charAt(0) + status.slice(1).toLowerCase().replace('_', ' '),
+   109→   109→      }
+   110→   110→  }
+   111→   111→}
+   112→   112→
+   113→   113→const itemVariants = {
+   114→   114→  hidden: { opacity: 0, y: 10 },
+   115→   115→  visible: { opacity: 1, y: 0 },
+   116→   116→}
+   117→   117→
+   118→   118→// ---------------------------------------------------------------------------
+   119→   119→// Access denied card
+   120→   120→// ---------------------------------------------------------------------------
+   121→   121→
+   122→   122→function AccessDenied({
+   123→   123→  title,
+   124→   124→  description,
+   125→   125→  showSignIn,
+   126→   126→}: {
+   127→   127→  title: string
+   128→   128→  description: string
+   129→   129→  showSignIn: boolean
+   130→   130→}) {
+   131→   131→  const setLoginOpen = useAuthStore((s) => s.setLoginOpen)
+   132→   132→  return (
+   133→   133→    <Card className="rounded-2xl">
+   134→   134→      <CardContent className="flex flex-col items-center justify-center py-16 text-center gap-3">
+   135→   135→        <div className="rounded-full bg-primary/10 p-4">
+   136→   136→          <AlertCircle className="h-8 w-8 text-primary" />
+   137→   137→        </div>
+   138→   138→        <div>
+   139→   139→          <h2 className="text-lg font-semibold">{title}</h2>
+   140→   140→          <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+   141→   141→            {description}
+   142→   142→          </p>
+   143→   143→        </div>
+   144→   144→        {showSignIn && (
+   145→   145→          <Button onClick={() => setLoginOpen(true)}>
+   146→   146→            <LogIn className="h-4 w-4" /> Sign in
+   147→   147→          </Button>
+   148→   148→        )}
+   149→   149→      </CardContent>
+   150→   150→    </Card>
+   151→   151→  )
+   152→   152→}
+   153→   153→
+   154→   154→// ---------------------------------------------------------------------------
+   155→   155→// Loading skeleton
+   156→   156→// ---------------------------------------------------------------------------
+   157→   157→
+   158→   158→function RiderDashboardSkeleton() {
+   159→   159→  return (
+   160→   160→    <div className="space-y-4">
+   161→   161→      <Skeleton className="h-32 rounded-2xl" />
+   162→   162→      <Skeleton className="h-40 rounded-2xl" />
+   163→   163→      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+   164→   164→        {Array.from({ length: 4 }).map((_, i) => (
+   165→   165→          <Skeleton key={i} className="h-24 rounded-2xl" />
+   166→   166→        ))}
+   167→   167→      </div>
+   168→   168→      <Skeleton className="h-64 rounded-2xl" />
+   169→   169→      <Skeleton className="h-48 rounded-2xl" />
+   170→   170→    </div>
+   171→   171→  )
+   172→   172→}
+   173→   173→
+   174→   174→// ---------------------------------------------------------------------------
+   175→   175→// Stat tile
+   176→   176→// ---------------------------------------------------------------------------
+   177→   177→
+   178→   178→function StatTile({
+   179→   179→  icon: Icon,
+   180→   180→  label,
+   181→   181→  value,
+   182→   182→  hint,
+   183→   183→}: {
+   184→   184→  icon: typeof Truck
+   185→   185→  label: string
+   186→   186→  value: string
+   187→   187→  hint?: string
+   188→   188→}) {
+   189→   189→  return (
+   190→   190→    <Card className="rounded-2xl">
+   191→   191→      <CardContent className="p-4 flex flex-col gap-2">
+   192→   192→        <div className="flex items-center justify-between">
+   193→   193→          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+   194→   194→            {label}
+   195→   195→          </span>
+   196→   196→          <div className="rounded-lg bg-primary/10 p-1.5">
+   197→   197→            <Icon className="h-4 w-4 text-primary" />
+   198→   198→          </div>
+   199→   199→        </div>
+   200→   200→        <p className="text-2xl font-bold tabular-nums">{value}</p>
+   201→   201→        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+   202→   202→      </CardContent>
+   203→   203→    </Card>
+   204→   204→  )
+   205→   205→}
+   206→   206→
+   207→   207→// ---------------------------------------------------------------------------
+   208→   208→// Active delivery card
+   209→   209→// ---------------------------------------------------------------------------
+   210→   210→
+   211→   211→function ActiveDeliveryCard({ order }: { order: Order }) {
+   212→   212→  const goToTracking = useFoodStore((s) => s.goToTracking)
+   213→   213→  const badge = statusBadge(order.status)
+   214→   214→  const itemCount = order.items.reduce((s, it) => s + it.quantity, 0)
+   215→   215→
+   216→   216→  return (
+   217→   217→    <Card className="rounded-2xl h-full hover:shadow-md transition-shadow">
+   218→   218→      <CardContent className="p-5 flex flex-col gap-3">
+   219→   219→        {/* header */}
+   220→   220→        <div className="flex items-start justify-between gap-2">
+   221→   221→          <div className="min-w-0">
+   222→   222→            <p className="font-mono text-xs text-muted-foreground">
+   223→   223→              {order.orderCode}
+   224→   224→            </p>
+   225→   225→            <h3 className="font-semibold truncate">
+   226→   226→              {order.restaurant?.name ?? 'Restaurant'}
+   227→   227→            </h3>
+   228→   228→          </div>
+   229→   229→          <Badge variant="outline" className={cn('shrink-0', badge.className)}>
+   230→   230→            {badge.label}
+   231→   231→          </Badge>
+   232→   232→        </div>
+   233→   233→
+   234→   234→        {/* pickup -> drop */}
+   235→   235→        <div className="space-y-2 rounded-xl bg-muted/40 p-3">
+   236→   236→          <div className="flex items-start gap-2 text-sm">
+   237→   237→            <MapPin className="h-3.5 w-3.5 mt-0.5 text-primary shrink-0" />
+   238→   238→            <div className="min-w-0">
+   239→   239→              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+   240→   240→                Pickup
+   241→   241→              </p>
+   242→   242→              <p className="truncate">
+   243→   243→                {order.restaurant?.address ?? 'Restaurant address'}
+   244→   244→              </p>
+   245→   245→            </div>
+   246→   246→          </div>
+   247→   247→          <Separator />
+   248→   248→          <div className="flex items-start gap-2 text-sm">
+   249→   249→            <Navigation className="h-3.5 w-3.5 mt-0.5 text-primary shrink-0" />
+   250→   250→            <div className="min-w-0">
+   251→   251→              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+   252→   252→                Drop
+   253→   253→              </p>
+   254→   254→              <p className="truncate">{order.addressLine}</p>
+   255→   255→            </div>
+   256→   256→          </div>
+   257→   257→        </div>
+   258→   258→
+   259→   259→        {/* meta row */}
+   260→   260→        <div className="flex items-center justify-between text-xs text-muted-foreground">
+   261→   261→          <span className="inline-flex items-center gap-1">
+   262→   262→            <Package className="h-3.5 w-3.5" />
+   263→   263→            {itemCount} item{itemCount !== 1 ? 's' : ''}
+   264→   264→          </span>
+   265→   265→          <span className="inline-flex items-center gap-1">
+   266→   266→            <Clock className="h-3.5 w-3.5" />
+   267→   267→            {timeAgo(order.createdAt)}
+   268→   268→          </span>
+   269→   269→          <span className="font-bold tabular-nums text-foreground">
+   270→   270→            {formatINR(order.total)}
+   271→   271→          </span>
+   272→   272→        </div>
+   273→   273→
+   274→   274→        <Button
+   275→   275→          size="sm"
+   276→   276→          className="w-full"
+   277→   277→          onClick={() => goToTracking(order.id)}
+   278→   278→        >
+   279→   279→          <Navigation className="h-3.5 w-3.5" /> Track Order
+   280→   280→        </Button>
+   281→   281→      </CardContent>
+   282→   282→    </Card>
+   283→   283→  )
+   284→   284→}
+   285→   285→
+   286→   286→// ---------------------------------------------------------------------------
+   287→   287→// Main component
+   288→   288→// ---------------------------------------------------------------------------
+   289→   289→
+   290→   290→export function RiderDashboard() {
+   291→   291→  const user = useAuthStore((s) => s.user)
+   292→   292→  const authLoading = useAuthStore((s) => s.loading)
+   293→   293→  const isRider = useAuthStore((s) => s.isRider)
+   294→   294→  const isAdmin = useAuthStore((s) => s.isAdmin)
+   295→   295→
+   296→   296→  const [data, setData] = useState<DashboardData | null>(null)
+   297→   297→  const [loading, setLoading] = useState(true)
+   298→   298→  const [error, setError] = useState<string | null>(null)
+   299→   299→  const [toggling, setToggling] = useState(false)
+   300→   300→  const [reloadKey, setReloadKey] = useState(0)
+   301→   301→
+   302→   302→  useEffect(() => {
+   303→   303→    if (authLoading) return
+   304→   304→    if (!user) return
+   305→   305→    if (!isRider() && !isAdmin()) return
+   306→   306→    let mounted = true
+   307→   307→    fetch('/api/rider/dashboard', { cache: 'no-store' })
+   308→   308→      .then((r) => r.json())
+   309→   309→      .then((payload) => {
+   310→   310→        if (!mounted) return
+   311→   311→        if (payload.success) {
+   312→   312→          setData(payload as DashboardData)
+   313→   313→          setError(null)
+   314→   314→        } else {
+   315→   315→          setError(payload.error || 'Failed to load rider dashboard')
+   316→   316→        }
+   317→   317→        setLoading(false)
+   318→   318→      })
+   319→   319→      .catch((e: unknown) => {
+   320→   320→        if (!mounted) return
+   321→   321→        setError(e instanceof Error ? e.message : 'Failed to load rider dashboard')
+   322→   322→        setLoading(false)
+   323→   323→      })
+   324→   324→    return () => {
+   325→   325→      mounted = false
+   326→   326→    }
+   327→   327→  }, [user, authLoading, isRider, isAdmin, reloadKey])
+   328→   328→
+   329→   329→  const retry = () => {
+   330→   330→    setLoading(true)
+   331→   331→    setError(null)
+   332→   332→    setReloadKey((k) => k + 1)
+   333→   333→  }
+   334→   334→
+   335→   335→  // ---- access control ----
+   336→   336→  if (authLoading) return <RiderDashboardSkeleton />
+   337→   337→  if (!user) {
+   338→   338→    return (
+   339→   339→      <AccessDenied
+   340→   340→        title="Access denied"
+   341→   341→        description="Please sign in with your delivery partner account to view the rider dashboard."
+   342→   342→        showSignIn
+   343→   343→      />
+   344→   344→    )
+   345→   345→  }
+   346→   346→  if (!isRider() && !isAdmin()) {
+   347→   347→    return (
+   348→   348→      <AccessDenied
+   349→   349→        title="Delivery Partner role required"
+   350→   350→        description="Your account doesn't have delivery partner access. Contact an admin if you believe this is an error."
+   351→   351→        showSignIn={false}
+   352→   352→      />
+   353→   353→    )
+   354→   354→  }
+   355→   355→
+   356→   356→  // ---- loading ----
+   357→   357→  if (loading) return <RiderDashboardSkeleton />
+   358→   358→
+   359→   359→  // ---- error ----
+   360→   360→  if (error || !data) {
+   361→   361→    return (
+   362→   362→      <Card className="rounded-2xl">
+   363→   363→        <CardContent className="flex flex-col items-center justify-center py-16 text-center gap-3">
+   364→   364→          <div className="rounded-full bg-destructive/10 p-3">
+   365→   365→            <AlertCircle className="h-6 w-6 text-destructive" />
+   366→   366→          </div>
+   367→   367→          <p className="text-muted-foreground max-w-sm">
+   368→   368→            {error || 'Rider dashboard is unavailable right now.'}
+   369→   369→          </p>
+   370→   370→          <Button variant="outline" onClick={retry}>
+   371→   371→            <RefreshCw className="h-4 w-4" /> Try again
+   372→   372→          </Button>
+   373→   373→        </CardContent>
+   374→   374→      </Card>
+   375→   375→    )
+   376→   376→  }
+   377→   377→
+   378→   378→  const { rider, stats, activeDeliveries, recentOrders } = data
+   379→   379→
+   380→   380→  const handleToggle = async (next: boolean) => {
+   381→   381→    setToggling(true)
+   382→   382→    try {
+   383→   383→      const res = await fetch('/api/rider/status', {
+   384→   384→        method: 'PATCH',
+   385→   385→        headers: { 'Content-Type': 'application/json' },
+   386→   386→        body: JSON.stringify({ isOnline: next }),
+   387→   387→      })
+   388→   388→      const payload = await res.json()
+   389→   389→      if (payload.success) {
+   390→   390→        setData((prev) =>
+   391→   391→          prev ? { ...prev, rider: { ...prev.rider, isOnline: next } } : prev
+   392→   392→        )
+   393→   393→        toast.success(
+   394→   394→          next ? 'You are now online' : 'You are now offline',
+   395→   395→          {
+   396→   396→            description: next
+   397→   397→              ? 'Accepting new delivery requests'
+   398→   398→              : 'No longer accepting deliveries',
+   399→   399→          }
+   400→   400→        )
+   401→   401→      } else {
+   402→   402→        toast.error(payload.error || 'Failed to update status')
+   403→   403→      }
+   404→   404→    } catch (e: unknown) {
+   405→   405→      toast.error(
+   406→   406→        e instanceof Error ? e.message : 'Failed to update status'
+   407→   407→      )
+   408→   408→    } finally {
+   409→   409→      setToggling(false)
+   410→   410→    }
+   411→   411→  }
+   412→   412→
+   413→   413→  return (
+   414→   414→    <motion.div
+   415→   415→      className="space-y-4"
+   416→   416→      initial="hidden"
+   417→   417→      animate="visible"
+   418→   418→      variants={{
+   419→   419→        hidden: {},
+   420→   420→        visible: { transition: { staggerChildren: 0.06 } },
+   421→   421→      }}
+   422→   422→    >
+   423→   423→      {/* -------------------------------------------------------------- */}
+   424→   424→      {/* Page heading                                                   */}
+   425→   425→      {/* -------------------------------------------------------------- */}
+   426→   426→      <motion.div variants={itemVariants}>
+   427→   427→        <div className="flex items-center gap-2">
+   428→   428→          <div className="rounded-xl bg-primary/10 p-2">
+   429→   429→            <Bike className="h-5 w-5 text-primary" />
+   430→   430→          </div>
+   431→   431→          <div>
+   432→   432→            <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
+   433→   433→              Rider Dashboard
+   434→   434→            </h1>
+   435→   435→            <p className="text-sm text-muted-foreground">
+   436→   436→              Track deliveries, manage earnings, and stay on schedule.
+   437→   437→            </p>
+   438→   438→          </div>
+   439→   439→        </div>
+   440→   440→      </motion.div>
+   441→   441→
+   442→   442→      {/* -------------------------------------------------------------- */}
+   443→   443→      {/* Profile header + online/offline toggle                         */}
+   444→   444→      {/* -------------------------------------------------------------- */}
+   445→   445→      <motion.div variants={itemVariants}>
+   446→   446→        <Card className="rounded-2xl">
+   447→   447→          <CardContent className="p-4 sm:p-5">
+   448→   448→            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+   449→   449→              <Avatar className="h-16 w-16 border shrink-0">
+   450→   450→                <AvatarFallback className="bg-primary text-primary-foreground text-xl font-bold">
+   451→   451→                  {initials(rider.name)}
+   452→   452→                </AvatarFallback>
+   453→   453→              </Avatar>
+   454→   454→
+   455→   455→              <div className="flex-1 min-w-0">
+   456→   456→                <div className="flex items-center gap-2 flex-wrap">
+   457→   457→                  <h2 className="text-lg font-semibold truncate">
+   458→   458→                    {rider.name}
+   459→   459→                  </h2>
+   460→   460→                  <Badge
+   461→   461→                    variant="outline"
+   462→   462→                    className={cn(
+   463→   463→                      'shrink-0',
+   464→   464→                      rider.isOnline
+   465→   465→                        ? 'bg-green-100 text-green-700 border-green-200'
+   466→   466→                        : 'bg-muted text-muted-foreground border-border'
+   467→   467→                    )}
+   468→   468→                  >
+   469→   469→                    <span
+   470→   470→                      className={cn(
+   471→   471→                        'h-1.5 w-1.5 rounded-full',
+   472→   472→                        rider.isOnline ? 'bg-green-500' : 'bg-muted-foreground'
+   473→   473→                      )}
+   474→   474→                      aria-hidden
+   475→   475→                    />
+   476→   476→                    {rider.isOnline
+   477→   477→                      ? 'Online — accepting deliveries'
+   478→   478→                      : 'Offline'}
+   479→   479→                  </Badge>
+   480→   480→                </div>
+   481→   481→                <div className="mt-1 flex flex-col sm:flex-row sm:items-center sm:gap-4 text-sm text-muted-foreground">
+   482→   482→                  <span className="inline-flex items-center gap-1.5">
+   483→   483→                    <Phone className="h-3.5 w-3.5" />
+   484→   484→                    {rider.phone}
+   485→   485→                  </span>
+   486→   486→                  <span className="inline-flex items-center gap-1.5">
+   487→   487→                    <Bike className="h-3.5 w-3.5" />
+   488→   488→                    {rider.vehicle}
+   489→   489→                  </span>
+   490→   490→                  <span className="inline-flex items-center gap-1.5">
+   491→   491→                    <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+   492→   492→                    {rider.rating.toFixed(1)} rating
+   493→   493→                  </span>
+   494→   494→                  <span className="inline-flex items-center gap-1.5">
+   495→   495→                    <Truck className="h-3.5 w-3.5" />
+   496→   496→                    {rider.totalDeliveries} deliveries
+   497→   497→                  </span>
+   498→   498→                </div>
+   499→   499→              </div>
+   500→   500→
+   501→   501→              {/* Online / Offline toggle */}
+   502→   502→              <div className="flex items-center gap-3 rounded-xl border bg-card p-3 shrink-0">
+   503→   503→                <div className="text-right">
+   504→   504→                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+   505→   505→                    Availability
+   506→   506→                  </p>
+   507→   507→                  <p
+   508→   508→                    className={cn(
+   509→   509→                      'text-sm font-semibold',
+   510→   510→                      rider.isOnline ? 'text-green-700' : 'text-muted-foreground'
+   511→   511→                    )}
+   512→   512→                  >
+   513→   513→                    {rider.isOnline ? 'Online' : 'Offline'}
+   514→   514→                  </p>
+   515→   515→                </div>
+   516→   516→                <Switch
+   517→   517→                  checked={rider.isOnline}
+   518→   518→                  disabled={toggling}
+   519→   519→                  onCheckedChange={handleToggle}
+   520→   520→                  aria-label="Toggle online status"
+   521→   521→                />
+   522→   522→              </div>
+   523→   523→            </div>
+   524→   524→          </CardContent>
+   525→   525→        </Card>
+   526→   526→      </motion.div>
+   527→   527→
+   528→   528→      {/* -------------------------------------------------------------- */}
+   529→   529→      {/* Earnings card (orange gradient)                                */}
+   530→   530→      {/* -------------------------------------------------------------- */}
+   531→   531→      <motion.div variants={itemVariants}>
+   532→   532→        <div className="relative overflow-hidden rounded-2xl p-5 text-primary-foreground shadow-md bg-gradient-to-br from-primary to-orange-600">
+   533→   533→          <div
+   534→   534→            className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-white/10"
+   535→   535→            aria-hidden
+   536→   536→          />
+   537→   537→          <div
+   538→   538→            className="pointer-events-none absolute -right-4 bottom-0 h-20 w-20 rounded-full bg-white/10"
+   539→   539→            aria-hidden
+   540→   540→          />
+   541→   541→          <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+   542→   542→            <div>
+   543→   543→              <p className="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide opacity-90">
+   544→   544→                <Wallet className="h-3.5 w-3.5" /> Total Earnings
+   545→   545→              </p>
+   546→   546→              <p className="mt-1 text-3xl font-bold tabular-nums">
+   547→   547→                {formatINR(stats.totalEarnings)}
+   548→   548→              </p>
+   549→   549→              <p className="text-xs opacity-80 mt-1">
+   550→   550→                Completed today: {stats.completedToday}
+   551→   551→              </p>
+   552→   552→            </div>
+   553→   553→            <div className="flex gap-4 sm:gap-6">
+   554→   554→              <div>
+   555→   555→                <p className="inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide opacity-80">
+   556→   556→                  <Banknote className="h-3 w-3" /> Delivery
+   557→   557→                </p>
+   558→   558→                <p className="text-lg font-bold tabular-nums">
+   559→   559→                  {formatINR(stats.deliveryEarnings)}
+   560→   560→                </p>
+   561→   561→              </div>
+   562→   562→              <div>
+   563→   563→                <p className="inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide opacity-80">
+   564→   564→                  <Coins className="h-3 w-3" /> Tips
+   565→   565→                </p>
+   566→   566→                <p className="text-lg font-bold tabular-nums">
+   567→   567→                  {formatINR(stats.tipEarnings)}
+   568→   568→                </p>
+   569→   569→              </div>
+   570→   570→            </div>
+   571→   571→          </div>
+   572→   572→        </div>
+   573→   573→      </motion.div>
+   574→   574→
+   575→   575→      {/* -------------------------------------------------------------- */}
+   576→   576→      {/* Stats grid (2x2 mobile, 4-col desktop)                         */}
+   577→   577→      {/* -------------------------------------------------------------- */}
+   578→   578→      <motion.div
+   579→   579→        variants={itemVariants}
+   580→   580→        className="grid grid-cols-2 md:grid-cols-4 gap-3"
+   581→   581→      >
+   582→   582→        <StatTile
+   583→   583→          icon={Truck}
+   584→   584→          label="Active"
+   585→   585→          value={String(stats.activeDeliveries)}
+   586→   586→          hint="In progress"
+   587→   587→        />
+   588→   588→        <StatTile
+   589→   589→          icon={CheckCircle2}
+   590→   590→          label="Today"
+   591→   591→          value={String(stats.completedToday)}
+   592→   592→          hint="Deliveries"
+   593→   593→        />
+   594→   594→        <StatTile
+   595→   595→          icon={Package}
+   596→   596→          label="Total"
+   597→   597→          value={String(stats.totalCompleted)}
+   598→   598→          hint="Completed"
+   599→   599→        />
+   600→   600→        <StatTile
+   601→   601→          icon={Star}
+   602→   602→          label="Rating"
+   603→   603→          value={rider.rating.toFixed(1)}
+   604→   604→          hint={`${rider.totalDeliveries} deliveries`}
+   605→   605→        />
+   606→   606→      </motion.div>
+   607→   607→
+   608→   608→      {/* -------------------------------------------------------------- */}
+   609→   609→      {/* Active deliveries                                              */}
+   610→   610→      {/* -------------------------------------------------------------- */}
+   611→   611→      <motion.div variants={itemVariants}>
+   612→   612→        <Card className="rounded-2xl">
+   613→   613→          <CardContent className="p-4 sm:p-5 space-y-4">
+   614→   614→            <div className="flex items-center justify-between gap-2">
+   615→   615→              <h3 className="font-semibold inline-flex items-center gap-2">
+   616→   616→                <Navigation className="h-4 w-4 text-primary" /> Active Deliveries
+   617→   617→              </h3>
+   618→   618→              <Badge variant="secondary">{activeDeliveries.length}</Badge>
+   619→   619→            </div>
+   620→   620→
+   621→   621→            {activeDeliveries.length === 0 ? (
+   622→   622→              <div className="rounded-xl border border-dashed p-8 text-center">
+   623→   623→                <div className="mx-auto mb-3 w-fit rounded-full bg-primary/10 p-3">
+   624→   624→                  <Bike className="h-6 w-6 text-primary" />
+   625→   625→                </div>
+   626→   626→                <p className="text-sm font-medium">No active deliveries</p>
+   627→   627→                <p className="text-xs text-muted-foreground mt-1 max-w-xs mx-auto">
+   628→   628→                  Go online to start receiving orders. New assignments will
+   629→   629→                  appear here in real time.
+   630→   630→                </p>
+   631→   631→                {!rider.isOnline && (
+   632→   632→                  <Button
+   633→   633→                    size="sm"
+   634→   634→                    className="mt-4"
+   635→   635→                    onClick={() => handleToggle(true)}
+   636→   636→                    disabled={toggling}
+   637→   637→                  >
+   638→   638→                    <Bike className="h-3.5 w-3.5" /> Go online
+   639→   639→                  </Button>
+   640→   640→                )}
+   641→   641→              </div>
+   642→   642→            ) : (
+   643→   643→              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+   644→   644→                {activeDeliveries.map((order) => (
+   645→   645→                  <ActiveDeliveryCard key={order.id} order={order} />
+   646→   646→                ))}
+   647→   647→              </div>
+   648→   648→            )}
+   649→   649→          </CardContent>
+   650→   650→        </Card>
+   651→   651→      </motion.div>
+   652→   652→
+   653→   653→      {/* -------------------------------------------------------------- */}
+   654→   654→      {/* Recent orders                                                  */}
+   655→   655→      {/* -------------------------------------------------------------- */}
+   656→   656→      <motion.div variants={itemVariants}>
+   657→   657→        <Card className="rounded-2xl">
+   658→   658→          <CardContent className="p-4 sm:p-5 space-y-4">
+   659→   659→            <div className="flex items-center justify-between gap-2">
+   660→   660→              <h3 className="font-semibold inline-flex items-center gap-2">
+   661→   661→                <Receipt className="h-4 w-4 text-primary" /> Recent Orders
+   662→   662→              </h3>
+   663→   663→              <span className="text-xs text-muted-foreground">
+   664→   664→                Last {recentOrders.length} orders
+   665→   665→              </span>
+   666→   666→            </div>
+   667→   667→
+   668→   668→            {recentOrders.length === 0 ? (
+   669→   669→              <div className="rounded-xl border border-dashed p-8 text-center">
+   670→   670→                <p className="text-sm text-muted-foreground">
+   671→   671→                  No recent orders yet.
+   672→   672→                </p>
+   673→   673→              </div>
+   674→   674→            ) : (
+   675→   675→              <>
+   676→   676→                {/* Desktop table */}
+   677→   677→                <div className="hidden md:block">
+   678→   678→                  <Table>
+   679→   679→                    <TableHeader>
+   680→   680→                      <TableRow>
+   681→   681→                        <TableHead>Order</TableHead>
+   682→   682→                        <TableHead>Restaurant</TableHead>
+   683→   683→                        <TableHead>Status</TableHead>
+   684→   684→                        <TableHead className="text-right">Total</TableHead>
+   685→   685→                        <TableHead className="text-right">When</TableHead>
+   686→   686→                      </TableRow>
+   687→   687→                    </TableHeader>
+   688→   688→                    <TableBody>
+   689→   689→                      {recentOrders.map((order) => {
+   690→   690→                        const badge = statusBadge(order.status)
+   691→   691→                        return (
+   692→   692→                          <TableRow key={order.id}>
+   693→   693→                            <TableCell className="font-mono text-xs">
+   694→   694→                              {order.orderCode}
+   695→   695→                            </TableCell>
+   696→   696→                            <TableCell className="font-medium">
+   697→   697→                              {order.restaurant?.name ?? 'Restaurant'}
+   698→   698→                            </TableCell>
+   699→   699→                            <TableCell>
+   700→   700→                              <Badge
+   701→   701→                                variant="outline"
+   702→   702→                                className={badge.className}
+   703→   703→                              >
+   704→   704→                                {badge.label}
+   705→   705→                              </Badge>
+   706→   706→                            </TableCell>
+   707→   707→                            <TableCell className="text-right font-semibold tabular-nums">
+   708→   708→                              {formatINR(order.total)}
+   709→   709→                            </TableCell>
+   710→   710→                            <TableCell className="text-right text-muted-foreground">
+   711→   711→                              {timeAgo(order.createdAt)}
+   712→   712→                            </TableCell>
+   713→   713→                          </TableRow>
+   714→   714→                        )
+   715→   715→                      })}
+   716→   716→                    </TableBody>
+   717→   717→                  </Table>
+   718→   718→                </div>
+   719→   719→
+   720→   720→                {/* Mobile list */}
+   721→   721→                <ul className="md:hidden divide-y">
+   722→   722→                  {recentOrders.map((order) => {
+   723→   723→                    const badge = statusBadge(order.status)
+   724→   724→                    return (
+   725→   725→                      <li
+   726→   726→                        key={order.id}
+   727→   727→                        className="py-3 flex items-center justify-between gap-3"
+   728→   728→                      >
+   729→   729→                        <div className="min-w-0">
+   730→   730→                          <div className="flex items-center gap-2">
+   731→   731→                            <span className="font-mono text-xs text-muted-foreground">
+   732→   732→                              {order.orderCode}
+   733→   733→                            </span>
+   734→   734→                            <Badge
+   735→   735→                              variant="outline"
+   736→   736→                              className={badge.className}
+   737→   737→                            >
+   738→   738→                              {badge.label}
+   739→   739→                            </Badge>
+   740→   740→                          </div>
+   741→   741→                          <p className="text-sm font-medium truncate mt-0.5">
+   742→   742→                            {order.restaurant?.name ?? 'Restaurant'}
+   743→   743→                          </p>
+   744→   744→                          <p className="text-xs text-muted-foreground">
+   745→   745→                            {timeAgo(order.createdAt)}
+   746→   746→                          </p>
+   747→   747→                        </div>
+   748→   748→                        <span className="font-bold tabular-nums">
+   749→   749→                          {formatINR(order.total)}
+   750→   750→                        </span>
+   751→   751→                      </li>
+   752→   752→                    )
+   753→   753→                  })}
+   754→   754→                </ul>
+   755→   755→              </>
+   756→   756→            )}
+   757→   757→          </CardContent>
+   758→   758→        </Card>
+   759→   759→      </motion.div>
+   760→   760→
+   761→   761→      {/* -------------------------------------------------------------- */}
+   762→   762→      {/* Admin-viewing hint                                             */}
+   763→   763→      {/* -------------------------------------------------------------- */}
+   764→   764→      {isAdmin() && !isRider() && (
+   765→   765→        <motion.div variants={itemVariants}>
+   766→   766→          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 flex items-start gap-3">
+   767→   767→            <ShieldAlert className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+   768→   768→            <p className="text-sm text-amber-800">
+   769→   769→              You&apos;re viewing the rider dashboard as a super admin. Some
+   770→   770→              actions (e.g. status updates) operate on the demo rider profile.
+   771→   771→            </p>
+   772→   772→          </div>
+   773→   773→        </motion.div>
+   774→   774→      )}
+   775→   775→    </motion.div>
+   776→   776→  )
+   777→   777→}
+   778→   778→

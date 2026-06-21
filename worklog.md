@@ -336,3 +336,33 @@ Stage Summary:
 - Restaurant Dashboard: kitchen display, today's revenue, menu summary, order management.
 - Header is role-aware: shows the correct portal button per role.
 - Files: src/lib/demo-users.ts (updated), src/lib/auth-store.ts (updated), src/lib/types.ts (updated), src/components/food/login-dialog.tsx (updated), src/components/food/header.tsx (updated), src/app/page.tsx (updated), src/app/api/rider/dashboard/route.ts (new), src/app/api/rider/status/route.ts (new), src/app/api/restaurant-portal/dashboard/route.ts (new), src/components/food/rider-dashboard.tsx (new, subagent), src/components/food/restaurant-dashboard.tsx (new, subagent).
+
+---
+Task ID: RIDER+RESTAURANT PORTALS (1-8)
+Agent: Z.ai Code (orchestrator)
+Task: Create rider and restaurant login roles with dedicated portals
+
+Work Log:
+- Schema: added ownerUserId to Restaurant (FK to User, "RestaurantOwner" relation) + userId to Rider (unique FK to User, "RiderUser" relation). Added reverse relations on User (ownedRestaurants, riderProfile). Ran db:push + db:generate.
+- Wrote prisma/seed-links.ts: linked DELIVERY_PARTNER demo user (Ajay Kumar) to a Rider record by userId, and RESTAURANT_OWNER demo user (Imran Khan) to Sushi Sensei restaurant by ownerUserId. RESTAURANT_STAFF (Sunita Devi) shares the same restaurant.
+- Built rider portal APIs: GET /api/rider/dashboard (rider profile + stats: activeDeliveries, completedToday, totalCompleted, totalEarnings, deliveryEarnings, tipEarnings + activeDeliveries[] + recentOrders[]), PATCH /api/rider/status (toggle online/offline).
+- Built restaurant portal APIs: GET /api/restaurant-portal/dashboard (restaurant profile + stats: activeOrders, todayOrders, todayRevenue, totalCompleted, cancelledOrders, totalRevenue, avgOrderValue, totalMenuItems, availableItems + activeOrders[] + recentOrders[] + menuCategories[]), PATCH /api/restaurant-portal/[id]/status (update order status, with ownership check).
+- Confirmed existing components (rider-dashboard.tsx, restaurant-dashboard.tsx) were already created by a prior subagent and wired to these API endpoints. Confirmed login-dialog.tsx already has grouped role categories (Admin & Staff, Restaurant Partners, Delivery Partners, Customer) with role icons. Confirmed header.tsx already shows Rider Dashboard / Restaurant Dashboard / Admin Portal buttons based on role. Confirmed login-dialog.tsx already has routeAfterLogin() that auto-routes based on role.
+- Fixed stale Prisma client issue (regenerated with db:generate + dev server restart).
+
+Verification (Agent Browser through Caddy gateway):
+- Login dialog shows 4 sections: ADMIN & STAFF, RESTAURANT PARTNERS, DELIVERY PARTNERS, CUSTOMER ✅
+- Logged in as Delivery Partner (Ajay Kumar) → auto-routed to Rider Portal ✅
+  - Rider Dashboard shows: name, vehicle (Bike), rating, deliveries count, online/offline toggle, Active Deliveries section, Recent Orders section, "Completed today: 0" stat ✅
+  - Header shows "Rider Dashboard" button + "Ajay Kumar / Delivery Partner" user menu ✅
+- Logged in as Restaurant Owner (Imran Khan) → auto-routed to Restaurant Portal ✅
+  - Restaurant Dashboard shows: "Sushi Sensei" restaurant, Active status, rating, Edit menu + View store buttons, Active Orders section, Recent Orders section, Menu Categories section, stats cards (ACTIVE, COMPLETED, AVG ORDER, TOTAL REVENUE, CANCELLED, MENU ITEMS) ✅
+  - Header shows "Restaurant Dashboard" button + "Imran Khan / Restaurant Owner" user menu ✅
+- Console clean, lint 0 errors.
+
+Stage Summary:
+- Rider and Restaurant roles have dedicated portals accessible from the login menu.
+- Login dialog organized into 4 clear sections with role-appropriate icons.
+- Auto-routing: Delivery Partner → Rider Portal, Restaurant Owner/Staff → Restaurant Portal, Admin → Admin Portal, Customer → Home.
+- Schema links: User ↔ Rider (1:1 via userId), User ↔ Restaurant (1:many via ownerUserId).
+- 5 new API route files. Existing dashboard components + login dialog + header were already wired by prior work.

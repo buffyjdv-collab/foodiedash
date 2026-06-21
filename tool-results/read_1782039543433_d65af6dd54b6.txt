@@ -1,0 +1,973 @@
+     1→'use client'
+     2→
+     3→import { useEffect, useState } from 'react'
+     4→import { motion } from 'framer-motion'
+     5→import { toast } from 'sonner'
+     6→import {
+     7→  Store,
+     8→  Star,
+     9→  MapPin,
+    10→  TrendingUp,
+    11→  ShoppingBag,
+    12→  CheckCircle2,
+    13→  XCircle,
+    14→  Receipt,
+    15→  IndianRupee,
+    16→  AlertCircle,
+    17→  RefreshCw,
+    18→  LogIn,
+    19→  Clock,
+    20→  Utensils,
+    21→  Pencil,
+    22→  Flame,
+    23→  ListOrdered,
+    24→  ShieldAlert,
+    25→  ChefHat,
+    26→  Check,
+    27→  ChevronRight,
+    28→} from 'lucide-react'
+    29→
+    30→import { Card, CardContent } from '@/components/ui/card'
+    31→import { Button } from '@/components/ui/button'
+    32→import { Badge } from '@/components/ui/badge'
+    33→import { Skeleton } from '@/components/ui/skeleton'
+    34→import { Separator } from '@/components/ui/separator'
+    35→import {
+    36→  Table,
+    37→  TableHeader,
+    38→  TableBody,
+    39→  TableHead,
+    40→  TableRow,
+    41→  TableCell,
+    42→} from '@/components/ui/table'
+    43→import { useAuthStore } from '@/lib/auth-store'
+    44→import { useFoodStore } from '@/lib/store'
+    45→import { formatINR, timeAgo, formatCount } from '@/lib/format'
+    46→import { cn } from '@/lib/utils'
+    47→import type { Order } from '@/lib/types'
+    48→
+    49→// ---------------------------------------------------------------------------
+    50→// Types (mirror of /api/restaurant-portal/dashboard payload)
+    51→// ---------------------------------------------------------------------------
+    52→
+    53→interface RestaurantDTO {
+    54→  id: string
+    55→  name: string
+    56→  slug: string
+    57→  cuisine: string
+    58→  imageUrl: string
+    59→  rating: number
+    60→  ratingCount: number
+    61→  isActive: boolean
+    62→  isPromoted: boolean
+    63→  costForTwo: number
+    64→  deliveryTime: number
+    65→  address: string
+    66→  city: string | null
+    67→}
+    68→
+    69→interface RestaurantStats {
+    70→  activeOrders: number
+    71→  todayOrders: number
+    72→  todayRevenue: number
+    73→  totalCompleted: number
+    74→  cancelledOrders: number
+    75→  totalRevenue: number
+    76→  avgOrderValue: number
+    77→  totalMenuItems: number
+    78→  availableItems: number
+    79→}
+    80→
+    81→interface MenuCategoryDTO {
+    82→  id: string
+    83→  name: string
+    84→  itemCount: number
+    85→}
+    86→
+    87→interface DashboardData {
+    88→  restaurant: RestaurantDTO
+    89→  stats: RestaurantStats
+    90→  activeOrders: Order[]
+    91→  recentOrders: Order[]
+    92→  menuCategories: MenuCategoryDTO[]
+    93→}
+    94→
+    95→// ---------------------------------------------------------------------------
+    96→// Helpers
+    97→// ---------------------------------------------------------------------------
+    98→
+    99→function statusBadge(status: string): { className: string; label: string } {
+   100→  switch (status) {
+   101→    case 'DELIVERED':
+   102→      return {
+   103→        className: 'bg-green-100 text-green-700 border-green-200',
+   104→        label: 'Delivered',
+   105→      }
+   106→    case 'CANCELLED':
+   107→      return {
+   108→        className: 'bg-red-100 text-red-700 border-red-200',
+   109→        label: 'Cancelled',
+   110→      }
+   111→    default:
+   112→      return {
+   113→        className: 'bg-primary/10 text-primary border-primary/20',
+   114→        label:
+   115→          status.charAt(0) + status.slice(1).toLowerCase().replace('_', ' '),
+   116→      }
+   117→  }
+   118→}
+   119→
+   120→const itemVariants = {
+   121→  hidden: { opacity: 0, y: 10 },
+   122→  visible: { opacity: 1, y: 0 },
+   123→}
+   124→
+   125→// Kitchen display timeline steps.
+   126→// Each step maps to one or more order statuses. The "current step" is the
+   127→// highest completed step for the order.
+   128→const TIMELINE_STEPS: { label: string; statuses: string[] }[] = [
+   129→  { label: 'Placed', statuses: ['PLACED'] },
+   130→  { label: 'Accepted', statuses: ['ACCEPTED'] },
+   131→  { label: 'Preparing', statuses: ['PREPARING'] },
+   132→  { label: 'Ready', statuses: ['READY'] },
+   133→  {
+   134→    label: 'Dispatched',
+   135→    statuses: ['ASSIGNED', 'PICKED_UP', 'ON_ROUTE'],
+   136→  },
+   137→]
+   138→
+   139→function currentStepIndex(status: string): number {
+   140→  for (let i = TIMELINE_STEPS.length - 1; i >= 0; i--) {
+   141→    if (TIMELINE_STEPS[i].statuses.includes(status)) return i
+   142→  }
+   143→  // Fallback for unknown / late-stage statuses (e.g. DELIVERED) → all done.
+   144→  if (status === 'DELIVERED') return TIMELINE_STEPS.length - 1
+   145→  return 0
+   146→}
+   147→
+   148→// ---------------------------------------------------------------------------
+   149→// Access denied card
+   150→// ---------------------------------------------------------------------------
+   151→
+   152→function AccessDenied({
+   153→  title,
+   154→  description,
+   155→  showSignIn,
+   156→}: {
+   157→  title: string
+   158→  description: string
+   159→  showSignIn: boolean
+   160→}) {
+   161→  const setLoginOpen = useAuthStore((s) => s.setLoginOpen)
+   162→  return (
+   163→    <Card className="rounded-2xl">
+   164→      <CardContent className="flex flex-col items-center justify-center py-16 text-center gap-3">
+   165→        <div className="rounded-full bg-primary/10 p-4">
+   166→          <AlertCircle className="h-8 w-8 text-primary" />
+   167→        </div>
+   168→        <div>
+   169→          <h2 className="text-lg font-semibold">{title}</h2>
+   170→          <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+   171→            {description}
+   172→          </p>
+   173→        </div>
+   174→        {showSignIn && (
+   175→          <Button onClick={() => setLoginOpen(true)}>
+   176→            <LogIn className="h-4 w-4" /> Sign in
+   177→          </Button>
+   178→        )}
+   179→      </CardContent>
+   180→    </Card>
+   181→  )
+   182→}
+   183→
+   184→// ---------------------------------------------------------------------------
+   185→// Loading skeleton
+   186→// ---------------------------------------------------------------------------
+   187→
+   188→function RestaurantDashboardSkeleton() {
+   189→  return (
+   190→    <div className="space-y-4">
+   191→      <Skeleton className="h-32 rounded-2xl" />
+   192→      <Skeleton className="h-36 rounded-2xl" />
+   193→      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+   194→        {Array.from({ length: 4 }).map((_, i) => (
+   195→          <Skeleton key={i} className="h-24 rounded-2xl" />
+   196→        ))}
+   197→      </div>
+   198→      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+   199→        {Array.from({ length: 4 }).map((_, i) => (
+   200→          <Skeleton key={i} className="h-24 rounded-2xl" />
+   201→        ))}
+   202→      </div>
+   203→      <Skeleton className="h-72 rounded-2xl" />
+   204→      <Skeleton className="h-56 rounded-2xl" />
+   205→    </div>
+   206→  )
+   207→}
+   208→
+   209→// ---------------------------------------------------------------------------
+   210→// Stat tile
+   211→// ---------------------------------------------------------------------------
+   212→
+   213→function StatTile({
+   214→  icon: Icon,
+   215→  label,
+   216→  value,
+   217→  hint,
+   218→}: {
+   219→  icon: typeof Store
+   220→  label: string
+   221→  value: string
+   222→  hint?: string
+   223→}) {
+   224→  return (
+   225→    <Card className="rounded-2xl">
+   226→      <CardContent className="p-4 flex flex-col gap-2">
+   227→        <div className="flex items-center justify-between">
+   228→          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+   229→            {label}
+   230→          </span>
+   231→          <div className="rounded-lg bg-primary/10 p-1.5">
+   232→            <Icon className="h-4 w-4 text-primary" />
+   233→          </div>
+   234→        </div>
+   235→        <p className="text-2xl font-bold tabular-nums">{value}</p>
+   236→        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+   237→      </CardContent>
+   238→    </Card>
+   239→  )
+   240→}
+   241→
+   242→// ---------------------------------------------------------------------------
+   243→// Timeline (kitchen display)
+   244→// ---------------------------------------------------------------------------
+   245→
+   246→function OrderTimeline({ status }: { status: string }) {
+   247→  const currentIdx = currentStepIndex(status)
+   248→  return (
+   249→    <ol className="flex items-center gap-1 sm:gap-2">
+   250→      {TIMELINE_STEPS.map((step, idx) => {
+   251→        const isDone = idx < currentIdx
+   252→        const isCurrent = idx === currentIdx
+   253→        const isLast = idx === TIMELINE_STEPS.length - 1
+   254→        return (
+   255→          <li key={step.label} className="flex items-center flex-1 min-w-0">
+   256→            <div className="flex flex-col items-center gap-1 min-w-0">
+   257→              <span
+   258→                className={cn(
+   259→                  'flex h-5 w-5 sm:h-6 sm:w-6 items-center justify-center rounded-full text-[10px] font-bold border-2 transition-colors',
+   260→                  isDone && 'bg-primary border-primary text-primary-foreground',
+   261→                  isCurrent &&
+   262→                    'bg-primary/10 border-primary text-primary ring-2 ring-primary/20',
+   263→                  !isDone &&
+   264→                    !isCurrent &&
+   265→                    'bg-muted border-muted-foreground/30 text-muted-foreground'
+   266→                )}
+   267→                aria-label={`${step.label} ${
+   268→                  isDone ? 'completed' : isCurrent ? 'in progress' : 'pending'
+   269→                }`}
+   270→              >
+   271→                {isDone ? (
+   272→                  <Check className="h-3 w-3" />
+   273→                ) : (
+   274→                  idx + 1
+   275→                )}
+   276→              </span>
+   277→              <span
+   278→                className={cn(
+   279→                  'text-[10px] font-medium truncate',
+   280→                  isDone || isCurrent
+   281→                    ? 'text-foreground'
+   282→                    : 'text-muted-foreground'
+   283→                )}
+   284→              >
+   285→                {step.label}
+   286→              </span>
+   287→            </div>
+   288→            {!isLast && (
+   289→              <div
+   290→                className={cn(
+   291→                  'flex-1 h-0.5 mx-1 -mt-4 rounded',
+   292→                  idx < currentIdx
+   293→                    ? 'bg-primary'
+   294→                    : 'bg-muted-foreground/20'
+   295→                )}
+   296→                aria-hidden
+   297→              />
+   298→            )}
+   299→          </li>
+   300→        )
+   301→      })}
+   302→    </ol>
+   303→  )
+   304→}
+   305→
+   306→// ---------------------------------------------------------------------------
+   307→// Kitchen order card
+   308→// ---------------------------------------------------------------------------
+   309→
+   310→function KitchenOrderCard({ order }: { order: Order }) {
+   311→  const badge = statusBadge(order.status)
+   312→  const currentIdx = currentStepIndex(order.status)
+   313→
+   314→  const handleAction = (label: string, nextStatus: string) => {
+   315→    toast.info('Demo: would update status', {
+   316→      description: `Order ${order.orderCode} → ${nextStatus.replace('_', ' ')}`,
+   317→    })
+   318→  }
+   319→
+   320→  // Decide which quick-action button (if any) to show.
+   321→  let action: { label: string; icon: typeof Check; next: string } | null = null
+   322→  if (order.status === 'PLACED') {
+   323→    action = { label: 'Accept', icon: Check, next: 'ACCEPTED' }
+   324→  } else if (order.status === 'ACCEPTED') {
+   325→    action = { label: 'Mark Preparing', icon: ChefHat, next: 'PREPARING' }
+   326→  } else if (order.status === 'PREPARING') {
+   327→    action = { label: 'Mark Ready', icon: CheckCircle2, next: 'READY' }
+   328→  }
+   329→
+   330→  return (
+   331→    <Card className="rounded-2xl h-full hover:shadow-md transition-shadow overflow-hidden">
+   332→      <CardContent className="p-4 flex flex-col gap-3">
+   333→        {/* header */}
+   334→        <div className="flex items-start justify-between gap-2">
+   335→          <div className="min-w-0">
+   336→            <div className="flex items-center gap-2">
+   337→              <p className="font-mono text-xs text-muted-foreground">
+   338→                {order.orderCode}
+   339→              </p>
+   340→              <span
+   341→                className={cn(
+   342→                  'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase',
+   343→                  currentIdx <= 1
+   344→                    ? 'bg-amber-100 text-amber-700'
+   345→                    : currentIdx === 2
+   346→                      ? 'bg-primary/15 text-primary'
+   347→                      : 'bg-blue-100 text-blue-700'
+   348→                )}
+   349→              >
+   350→                <Clock className="h-2.5 w-2.5" />
+   351→                {timeAgo(order.createdAt)}
+   352→              </span>
+   353→            </div>
+   354→            <p className="text-xs text-muted-foreground mt-0.5">
+   355→              {order.items.length} item
+   356→              {order.items.length !== 1 ? 's' : ''} ·{' '}
+   357→              <span className="font-semibold text-foreground tabular-nums">
+   358→                {formatINR(order.total)}
+   359→              </span>
+   360→            </p>
+   361→          </div>
+   362→          <Badge variant="outline" className={cn('shrink-0', badge.className)}>
+   363→            {badge.label}
+   364→          </Badge>
+   365→        </div>
+   366→
+   367→        {/* items */}
+   368→        <ul className="space-y-1 rounded-xl bg-muted/40 p-3 text-sm">
+   369→          {order.items.map((it, i) => (
+   370→            <li
+   371→              key={i}
+   372→              className="flex items-center justify-between gap-2"
+   373→            >
+   374→              <span className="flex items-center gap-2 min-w-0">
+   375→                <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-primary/15 text-[10px] font-bold text-primary shrink-0">
+   376→                  {it.quantity}
+   377→                </span>
+   378→                <span className="truncate">{it.name}</span>
+   379→              </span>
+   380→              <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+   381→                {formatINR(it.total)}
+   382→              </span>
+   383→            </li>
+   384→          ))}
+   385→        </ul>
+   386→
+   387→        {/* timeline */}
+   388→        <OrderTimeline status={order.status} />
+   389→
+   390→        {/* quick action */}
+   391→        {action && (
+   392→          <Button
+   393→            size="sm"
+   394→            className="w-full"
+   395→            onClick={() => handleAction(action!.label, action!.next)}
+   396→          >
+   397→            <action.icon className="h-3.5 w-3.5" /> {action.label}
+   398→          </Button>
+   399→        )}
+   400→      </CardContent>
+   401→    </Card>
+   402→  )
+   403→}
+   404→
+   405→// ---------------------------------------------------------------------------
+   406→// Main component
+   407→// ---------------------------------------------------------------------------
+   408→
+   409→export function RestaurantDashboard() {
+   410→  const user = useAuthStore((s) => s.user)
+   411→  const authLoading = useAuthStore((s) => s.loading)
+   412→  const isRestaurant = useAuthStore((s) => s.isRestaurant)
+   413→  const isAdmin = useAuthStore((s) => s.isAdmin)
+   414→  const openRestaurant = useFoodStore((s) => s.openRestaurant)
+   415→
+   416→  const [data, setData] = useState<DashboardData | null>(null)
+   417→  const [loading, setLoading] = useState(true)
+   418→  const [error, setError] = useState<string | null>(null)
+   419→  const [reloadKey, setReloadKey] = useState(0)
+   420→
+   421→  useEffect(() => {
+   422→    if (authLoading) return
+   423→    if (!user) return
+   424→    if (!isRestaurant() && !isAdmin()) return
+   425→    let mounted = true
+   426→    fetch('/api/restaurant-portal/dashboard', { cache: 'no-store' })
+   427→      .then((r) => r.json())
+   428→      .then((payload) => {
+   429→        if (!mounted) return
+   430→        if (payload.success) {
+   431→          setData(payload as DashboardData)
+   432→          setError(null)
+   433→        } else {
+   434→          setError(payload.error || 'Failed to load restaurant dashboard')
+   435→        }
+   436→        setLoading(false)
+   437→      })
+   438→      .catch((e: unknown) => {
+   439→        if (!mounted) return
+   440→        setError(
+   441→          e instanceof Error ? e.message : 'Failed to load restaurant dashboard'
+   442→        )
+   443→        setLoading(false)
+   444→      })
+   445→    return () => {
+   446→      mounted = false
+   447→    }
+   448→  }, [user, authLoading, isRestaurant, isAdmin, reloadKey])
+   449→
+   450→  const retry = () => {
+   451→    setLoading(true)
+   452→    setError(null)
+   453→    setReloadKey((k) => k + 1)
+   454→  }
+   455→
+   456→  // ---- access control ----
+   457→  if (authLoading) return <RestaurantDashboardSkeleton />
+   458→  if (!user) {
+   459→    return (
+   460→      <AccessDenied
+   461→        title="Access denied"
+   462→        description="Please sign in with your restaurant owner or staff account to view the restaurant dashboard."
+   463→        showSignIn
+   464→      />
+   465→    )
+   466→  }
+   467→  if (!isRestaurant() && !isAdmin()) {
+   468→    return (
+   469→      <AccessDenied
+   470→        title="Restaurant role required"
+   471→        description="Your account doesn't have restaurant access. Contact an admin if you believe this is an error."
+   472→        showSignIn={false}
+   473→      />
+   474→    )
+   475→  }
+   476→
+   477→  // ---- loading ----
+   478→  if (loading) return <RestaurantDashboardSkeleton />
+   479→
+   480→  // ---- error ----
+   481→  if (error || !data) {
+   482→    return (
+   483→      <Card className="rounded-2xl">
+   484→        <CardContent className="flex flex-col items-center justify-center py-16 text-center gap-3">
+   485→          <div className="rounded-full bg-destructive/10 p-3">
+   486→            <AlertCircle className="h-6 w-6 text-destructive" />
+   487→          </div>
+   488→          <p className="text-muted-foreground max-w-sm">
+   489→            {error || 'Restaurant dashboard is unavailable right now.'}
+   490→          </p>
+   491→          <Button variant="outline" onClick={retry}>
+   492→            <RefreshCw className="h-4 w-4" /> Try again
+   493→          </Button>
+   494→        </CardContent>
+   495→      </Card>
+   496→    )
+   497→  }
+   498→
+   499→  const { restaurant, stats, activeOrders, recentOrders, menuCategories } =
+   500→    data
+   501→  const totalCategoryItems = menuCategories.reduce(
+   502→    (s, c) => s + c.itemCount,
+   503→    0
+   504→  )
+   505→
+   506→  return (
+   507→    <motion.div
+   508→      className="space-y-4"
+   509→      initial="hidden"
+   510→      animate="visible"
+   511→      variants={{
+   512→        hidden: {},
+   513→        visible: { transition: { staggerChildren: 0.06 } },
+   514→      }}
+   515→    >
+   516→      {/* -------------------------------------------------------------- */}
+   517→      {/* Page heading                                                   */}
+   518→      {/* -------------------------------------------------------------- */}
+   519→      <motion.div variants={itemVariants}>
+   520→        <div className="flex items-center gap-2">
+   521→          <div className="rounded-xl bg-primary/10 p-2">
+   522→            <Store className="h-5 w-5 text-primary" />
+   523→          </div>
+   524→          <div>
+   525→            <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
+   526→              Restaurant Dashboard
+   527→            </h1>
+   528→            <p className="text-sm text-muted-foreground">
+   529→              Monitor orders, update kitchen status, and track performance.
+   530→            </p>
+   531→          </div>
+   532→        </div>
+   533→      </motion.div>
+   534→
+   535→      {/* -------------------------------------------------------------- */}
+   536→      {/* Restaurant profile header                                      */}
+   537→      {/* -------------------------------------------------------------- */}
+   538→      <motion.div variants={itemVariants}>
+   539→        <Card className="rounded-2xl">
+   540→          <CardContent className="p-4 sm:p-5">
+   541→            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+   542→              {/* thumbnail */}
+   543→              <div className="relative h-20 w-20 sm:h-24 sm:w-24 shrink-0 overflow-hidden rounded-2xl border bg-muted">
+   544→                <img
+   545→                  src={restaurant.imageUrl}
+   546→                  alt={restaurant.name}
+   547→                  className="h-full w-full object-cover"
+   548→                />
+   549→              </div>
+   550→
+   551→              <div className="flex-1 min-w-0">
+   552→                <div className="flex items-center gap-2 flex-wrap">
+   553→                  <h2 className="text-lg font-semibold truncate">
+   554→                    {restaurant.name}
+   555→                  </h2>
+   556→                  {restaurant.isActive ? (
+   557→                    <Badge className="bg-green-100 text-green-700 border-green-200 border">
+   558→                      Active
+   559→                    </Badge>
+   560→                  ) : (
+   561→                    <Badge
+   562→                      variant="outline"
+   563→                      className="bg-muted text-muted-foreground"
+   564→                    >
+   565→                      Inactive
+   566→                    </Badge>
+   567→                  )}
+   568→                  {restaurant.isPromoted && (
+   569→                    <Badge className="bg-amber-100 text-amber-700 border-amber-200 border">
+   570→                      <Flame className="h-3 w-3" /> Promoted
+   571→                    </Badge>
+   572→                  )}
+   573→                </div>
+   574→                <p className="text-sm text-muted-foreground mt-0.5">
+   575→                  {restaurant.cuisine}
+   576→                </p>
+   577→                <div className="mt-1 flex flex-col sm:flex-row sm:items-center sm:gap-4 text-sm text-muted-foreground">
+   578→                  <span className="inline-flex items-center gap-1.5">
+   579→                    <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+   580→                    <span className="font-medium text-foreground">
+   581→                      {restaurant.rating.toFixed(1)}
+   582→                    </span>
+   583→                    <span className="text-xs">
+   584→                      ({formatCount(restaurant.ratingCount)} ratings)
+   585→                    </span>
+   586→                  </span>
+   587→                  <span className="inline-flex items-center gap-1.5">
+   588→                    <MapPin className="h-3.5 w-3.5" />
+   589→                    <span className="truncate">
+   590→                      {restaurant.address}
+   591→                      {restaurant.city ? `, ${restaurant.city}` : ''}
+   592→                    </span>
+   593→                  </span>
+   594→                  <span className="inline-flex items-center gap-1.5">
+   595→                    <Clock className="h-3.5 w-3.5" />
+   596→                    {restaurant.deliveryTime} min
+   597→                  </span>
+   598→                </div>
+   599→              </div>
+   600→
+   601→              <div className="flex gap-2 shrink-0">
+   602→                <Button
+   603→                  variant="outline"
+   604→                  size="sm"
+   605→                  onClick={() => {
+   606→                    toast.info('Manage full menu', {
+   607→                      description:
+   608→                        'Available in Admin Portal > Restaurants.',
+   609→                    })
+   610→                  }}
+   611→                >
+   612→                  <Pencil className="h-3.5 w-3.5" /> Edit menu
+   613→                </Button>
+   614→                <Button
+   615→                  size="sm"
+   616→                  onClick={() => openRestaurant(restaurant.slug)}
+   617→                >
+   618→                  View store
+   619→                  <ChevronRight className="h-3.5 w-3.5" />
+   620→                </Button>
+   621→              </div>
+   622→            </div>
+   623→          </CardContent>
+   624→        </Card>
+   625→      </motion.div>
+   626→
+   627→      {/* -------------------------------------------------------------- */}
+   628→      {/* Today's performance card (orange gradient)                     */}
+   629→      {/* -------------------------------------------------------------- */}
+   630→      <motion.div variants={itemVariants}>
+   631→        <div className="relative overflow-hidden rounded-2xl p-5 text-primary-foreground shadow-md bg-gradient-to-br from-primary to-orange-600">
+   632→          <div
+   633→            className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-white/10"
+   634→            aria-hidden
+   635→          />
+   636→          <div
+   637→            className="pointer-events-none absolute -right-4 bottom-0 h-20 w-20 rounded-full bg-white/10"
+   638→            aria-hidden
+   639→          />
+   640→          <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+   641→            <div>
+   642→              <p className="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide opacity-90">
+   643→                <TrendingUp className="h-3.5 w-3.5" /> Today&apos;s Revenue
+   644→              </p>
+   645→              <p className="mt-1 text-3xl font-bold tabular-nums">
+   646→                {formatINR(stats.todayRevenue)}
+   647→              </p>
+   648→              <p className="text-xs opacity-80 mt-1">
+   649→                From {stats.todayOrders} order
+   650→                {stats.todayOrders !== 1 ? 's' : ''} placed today
+   651→              </p>
+   652→            </div>
+   653→            <div className="flex gap-4 sm:gap-6">
+   654→              <div>
+   655→                <p className="inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide opacity-80">
+   656→                  <ShoppingBag className="h-3 w-3" /> Today
+   657→                </p>
+   658→                <p className="text-lg font-bold tabular-nums">
+   659→                  {stats.todayOrders}
+   660→                </p>
+   661→              </div>
+   662→              <div>
+   663→                <p className="inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide opacity-80">
+   664→                  <IndianRupee className="h-3 w-3" /> Avg
+   665→                </p>
+   666→                <p className="text-lg font-bold tabular-nums">
+   667→                  {formatINR(stats.avgOrderValue)}
+   668→                </p>
+   669→              </div>
+   670→            </div>
+   671→          </div>
+   672→        </div>
+   673→      </motion.div>
+   674→
+   675→      {/* -------------------------------------------------------------- */}
+   676→      {/* Stats grid — first row                                         */}
+   677→      {/* -------------------------------------------------------------- */}
+   678→      <motion.div
+   679→        variants={itemVariants}
+   680→        className="grid grid-cols-2 md:grid-cols-4 gap-3"
+   681→      >
+   682→        <StatTile
+   683→          icon={ShoppingBag}
+   684→          label="Active"
+   685→          value={String(stats.activeOrders)}
+   686→          hint="In kitchen"
+   687→        />
+   688→        <StatTile
+   689→          icon={CheckCircle2}
+   690→          label="Completed"
+   691→          value={String(stats.totalCompleted)}
+   692→          hint="All time"
+   693→        />
+   694→        <StatTile
+   695→          icon={IndianRupee}
+   696→          label="Avg Order"
+   697→          value={formatINR(stats.avgOrderValue)}
+   698→          hint="Per order"
+   699→        />
+   700→        <StatTile
+   701→          icon={TrendingUp}
+   702→          label="Total Revenue"
+   703→          value={formatINR(stats.totalRevenue)}
+   704→          hint="All time"
+   705→        />
+   706→      </motion.div>
+   707→
+   708→      {/* -------------------------------------------------------------- */}
+   709→      {/* Stats grid — second row                                        */}
+   710→      {/* -------------------------------------------------------------- */}
+   711→      <motion.div
+   712→        variants={itemVariants}
+   713→        className="grid grid-cols-2 md:grid-cols-4 gap-3"
+   714→      >
+   715→        <StatTile
+   716→          icon={XCircle}
+   717→          label="Cancelled"
+   718→          value={String(stats.cancelledOrders)}
+   719→          hint="All time"
+   720→        />
+   721→        <StatTile
+   722→          icon={Utensils}
+   723→          label="Menu Items"
+   724→          value={String(stats.totalMenuItems)}
+   725→          hint="Total"
+   726→        />
+   727→        <StatTile
+   728→          icon={Check}
+   729→          label="Available"
+   730→          value={String(stats.availableItems)}
+   731→          hint="Online now"
+   732→        />
+   733→        <StatTile
+   734→          icon={Star}
+   735→          label="Rating"
+   736→          value={restaurant.rating.toFixed(1)}
+   737→          hint={`${formatCount(restaurant.ratingCount)} ratings`}
+   738→        />
+   739→      </motion.div>
+   740→
+   741→      {/* -------------------------------------------------------------- */}
+   742→      {/* Active orders (kitchen display)                                */}
+   743→      {/* -------------------------------------------------------------- */}
+   744→      <motion.div variants={itemVariants}>
+   745→        <Card className="rounded-2xl">
+   746→          <CardContent className="p-4 sm:p-5 space-y-4">
+   747→            <div className="flex items-center justify-between gap-2">
+   748→              <h3 className="font-semibold inline-flex items-center gap-2">
+   749→                <ChefHat className="h-4 w-4 text-primary" /> Active Orders
+   750→              </h3>
+   751→              <Badge variant="secondary">{activeOrders.length}</Badge>
+   752→            </div>
+   753→
+   754→            {activeOrders.length === 0 ? (
+   755→              <div className="rounded-xl border border-dashed p-8 text-center">
+   756→                <div className="mx-auto mb-3 w-fit rounded-full bg-primary/10 p-3">
+   757→                  <Receipt className="h-6 w-6 text-primary" />
+   758→                </div>
+   759→                <p className="text-sm font-medium">No active orders</p>
+   760→                <p className="text-xs text-muted-foreground mt-1 max-w-xs mx-auto">
+   761→                  New orders from customers will show up here automatically.
+   762→                </p>
+   763→              </div>
+   764→            ) : (
+   765→              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+   766→                {activeOrders.map((order) => (
+   767→                  <KitchenOrderCard key={order.id} order={order} />
+   768→                ))}
+   769→              </div>
+   770→            )}
+   771→          </CardContent>
+   772→        </Card>
+   773→      </motion.div>
+   774→
+   775→      {/* -------------------------------------------------------------- */}
+   776→      {/* Recent orders table                                            */}
+   777→      {/* -------------------------------------------------------------- */}
+   778→      <motion.div variants={itemVariants}>
+   779→        <Card className="rounded-2xl">
+   780→          <CardContent className="p-4 sm:p-5 space-y-4">
+   781→            <div className="flex items-center justify-between gap-2">
+   782→              <h3 className="font-semibold inline-flex items-center gap-2">
+   783→                <Receipt className="h-4 w-4 text-primary" /> Recent Orders
+   784→              </h3>
+   785→              <span className="text-xs text-muted-foreground">
+   786→                Last {recentOrders.length} orders
+   787→              </span>
+   788→            </div>
+   789→
+   790→            {recentOrders.length === 0 ? (
+   791→              <div className="rounded-xl border border-dashed p-8 text-center">
+   792→                <p className="text-sm text-muted-foreground">
+   793→                  No recent orders yet.
+   794→                </p>
+   795→              </div>
+   796→            ) : (
+   797→              <>
+   798→                {/* Desktop table */}
+   799→                <div className="hidden md:block">
+   800→                  <Table>
+   801→                    <TableHeader>
+   802→                      <TableRow>
+   803→                        <TableHead>Order</TableHead>
+   804→                        <TableHead>Status</TableHead>
+   805→                        <TableHead className="text-right">Items</TableHead>
+   806→                        <TableHead className="text-right">Total</TableHead>
+   807→                        <TableHead className="text-right">When</TableHead>
+   808→                      </TableRow>
+   809→                    </TableHeader>
+   810→                    <TableBody>
+   811→                      {recentOrders.map((order) => {
+   812→                        const badge = statusBadge(order.status)
+   813→                        const itemCount = order.items.reduce(
+   814→                          (s, it) => s + it.quantity,
+   815→                          0
+   816→                        )
+   817→                        return (
+   818→                          <TableRow key={order.id}>
+   819→                            <TableCell className="font-mono text-xs">
+   820→                              {order.orderCode}
+   821→                            </TableCell>
+   822→                            <TableCell>
+   823→                              <Badge
+   824→                                variant="outline"
+   825→                                className={badge.className}
+   826→                              >
+   827→                                {badge.label}
+   828→                              </Badge>
+   829→                            </TableCell>
+   830→                            <TableCell className="text-right tabular-nums">
+   831→                              {itemCount}
+   832→                            </TableCell>
+   833→                            <TableCell className="text-right font-semibold tabular-nums">
+   834→                              {formatINR(order.total)}
+   835→                            </TableCell>
+   836→                            <TableCell className="text-right text-muted-foreground">
+   837→                              {timeAgo(order.createdAt)}
+   838→                            </TableCell>
+   839→                          </TableRow>
+   840→                        )
+   841→                      })}
+   842→                    </TableBody>
+   843→                  </Table>
+   844→                </div>
+   845→
+   846→                {/* Mobile list */}
+   847→                <ul className="md:hidden divide-y">
+   848→                  {recentOrders.map((order) => {
+   849→                    const badge = statusBadge(order.status)
+   850→                    const itemCount = order.items.reduce(
+   851→                      (s, it) => s + it.quantity,
+   852→                      0
+   853→                    )
+   854→                    return (
+   855→                      <li
+   856→                        key={order.id}
+   857→                        className="py-3 flex items-center justify-between gap-3"
+   858→                      >
+   859→                        <div className="min-w-0">
+   860→                          <div className="flex items-center gap-2">
+   861→                            <span className="font-mono text-xs text-muted-foreground">
+   862→                              {order.orderCode}
+   863→                            </span>
+   864→                            <Badge
+   865→                              variant="outline"
+   866→                              className={badge.className}
+   867→                            >
+   868→                              {badge.label}
+   869→                            </Badge>
+   870→                          </div>
+   871→                          <p className="text-xs text-muted-foreground mt-0.5">
+   872→                            {itemCount} item{itemCount !== 1 ? 's' : ''} ·{' '}
+   873→                            {timeAgo(order.createdAt)}
+   874→                          </p>
+   875→                        </div>
+   876→                        <span className="font-bold tabular-nums">
+   877→                          {formatINR(order.total)}
+   878→                        </span>
+   879→                      </li>
+   880→                    )
+   881→                  })}
+   882→                </ul>
+   883→              </>
+   884→            )}
+   885→          </CardContent>
+   886→        </Card>
+   887→      </motion.div>
+   888→
+   889→      {/* -------------------------------------------------------------- */}
+   890→      {/* Menu summary                                                   */}
+   891→      {/* -------------------------------------------------------------- */}
+   892→      <motion.div variants={itemVariants}>
+   893→        <Card className="rounded-2xl">
+   894→          <CardContent className="p-4 sm:p-5 space-y-4">
+   895→            <div className="flex items-center justify-between gap-2">
+   896→              <h3 className="font-semibold inline-flex items-center gap-2">
+   897→                <ListOrdered className="h-4 w-4 text-primary" /> Menu Categories
+   898→              </h3>
+   899→              <Button
+   900→                size="sm"
+   901→                variant="outline"
+   902→                onClick={() =>
+   903→                  toast.info('Manage full menu', {
+   904→                    description:
+   905→                      'Available in Admin Portal > Restaurants.',
+   906→                  })
+   907→                }
+   908→              >
+   909→                <Pencil className="h-3.5 w-3.5" /> Manage full menu
+   910→              </Button>
+   911→            </div>
+   912→
+   913→            {menuCategories.length === 0 ? (
+   914→              <div className="rounded-xl border border-dashed p-8 text-center">
+   915→                <p className="text-sm text-muted-foreground">
+   916→                  No menu categories yet.
+   917→                </p>
+   918→              </div>
+   919→            ) : (
+   920→              <>
+   921→                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+   922→                  <span>
+   923→                    {menuCategories.length} categor
+   924→                    {menuCategories.length !== 1 ? 'ies' : 'y'}
+   925→                  </span>
+   926→                  <span aria-hidden>·</span>
+   927→                  <span>{totalCategoryItems} items total</span>
+   928→                </div>
+   929→                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+   930→                  {menuCategories.map((cat) => (
+   931→                    <li
+   932→                      key={cat.id}
+   933→                      className="flex items-center justify-between gap-2 rounded-xl border bg-card p-3"
+   934→                    >
+   935→                      <span className="inline-flex items-center gap-2 min-w-0">
+   936→                        <span className="rounded-lg bg-primary/10 p-1.5 shrink-0">
+   937→                          <Utensils className="h-3.5 w-3.5 text-primary" />
+   938→                        </span>
+   939→                        <span className="font-medium truncate">
+   940→                          {cat.name}
+   941→                        </span>
+   942→                      </span>
+   943→                      <Badge variant="secondary" className="tabular-nums">
+   944→                        {cat.itemCount}
+   945→                      </Badge>
+   946→                    </li>
+   947→                  ))}
+   948→                </ul>
+   949→              </>
+   950→            )}
+   951→          </CardContent>
+   952→        </Card>
+   953→      </motion.div>
+   954→
+   955→      {/* -------------------------------------------------------------- */}
+   956→      {/* Admin-viewing hint                                             */}
+   957→      {/* -------------------------------------------------------------- */}
+   958→      {isAdmin() && !isRestaurant() && (
+   959→        <motion.div variants={itemVariants}>
+   960→          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 flex items-start gap-3">
+   961→            <ShieldAlert className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+   962→            <p className="text-sm text-amber-800">
+   963→              You&apos;re viewing the restaurant dashboard as a super admin.
+   964→              Quick-action buttons are demo-only — wire them to a status-update
+   965→              API to enable real kitchen workflow updates.
+   966→            </p>
+   967→          </div>
+   968→        </motion.div>
+   969→      )}
+   970→    </motion.div>
+   971→  )
+   972→}
+   973→
