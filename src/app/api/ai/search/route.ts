@@ -99,8 +99,17 @@ export async function POST(req: NextRequest) {
     })
   } catch (error: any) {
     console.error('[/api/ai/search] error:', error)
+    const msg = error?.message || ''
+    // Graceful fallback when the AI API is unreachable
+    if (msg.includes('fetch failed') || msg.includes('ECONNREFUSED') || msg.includes('ETIMEDOUT') || msg.includes('Configuration file not found')) {
+      return NextResponse.json({
+        success: true,
+        items: [],
+        aiExplanation: 'AI search is unavailable in this environment. Try using the regular search bar at the top of the page to find restaurants and dishes!',
+      })
+    }
     return NextResponse.json(
-      { success: false, error: error?.message || 'Internal server error' },
+      { success: false, error: msg || 'Internal server error' },
       { status: 500 }
     )
   }

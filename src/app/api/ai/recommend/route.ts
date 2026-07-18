@@ -77,8 +77,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, reply })
   } catch (error: any) {
     console.error('[/api/ai/recommend] error:', error)
+    // Graceful fallback when the AI API is unreachable (e.g. on Vercel where
+    // the Z.AI internal API isn't accessible from outside the Z.ai sandbox).
+    const msg = error?.message || ''
+    if (msg.includes('fetch failed') || msg.includes('ECONNREFUSED') || msg.includes('ETIMEDOUT') || msg.includes('Configuration file not found')) {
+      return NextResponse.json({
+        success: true,
+        reply: "I'm currently unable to reach the AI service from this environment. 🤖\n\nIn the meantime, you can browse restaurants directly from the home page, or use the search bar to find specific dishes. Try filtering by cuisine or 'Rating 4.0+' for top picks!",
+      })
+    }
     return NextResponse.json(
-      { success: false, error: error?.message || 'Internal server error' },
+      { success: false, error: msg || 'Internal server error' },
       { status: 500 }
     )
   }
