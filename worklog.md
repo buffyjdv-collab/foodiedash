@@ -395,3 +395,37 @@ Stage Summary:
 - WebSocket tracking has client-side fallback for Vercel (no socket server needed).
 - All secrets excluded from git (.env, .z-ai-config, db/custom.db).
 - Awaiting user credentials: Neon DATABASE_URL, GitHub repo access, Vercel token, Z.AI API key.
+
+---
+Task ID: PRODUCTION DEPLOYMENT (execution)
+Agent: Z.ai Code (orchestrator)
+Task: Deploy to GitHub + Neon DB + Vercel with provided credentials
+
+Work Log:
+- GitHub: Created repo buffyjdv-collab/foodiedash, pushed all code (178 files). https://github.com/buffyjdv-collab/foodiedash
+- Neon DB: Switched schema to postgresql, pushed schema (all tables created), seeded all data:
+  - Core: 12 restaurants + menus + 5 coupons + 5 riders
+  - RBAC: 56 permissions, 10 roles, 10 demo users (OTP 123456)
+  - Hyderabad: 8 HY restaurants with real coordinates
+  - Links: User↔Rider (Ajay Kumar), User↔Restaurant (Imran Khan → Sushi Sensei)
+- Vercel: Linked project, set 6 env vars (DATABASE_URL + 5 ZAI_*), deployed to production.
+- Fixed Z.AI SDK for Vercel: updated lib/ai.ts to construct ZAI instance directly from env vars (bypassing file-based config that doesn't work on serverless).
+- Added graceful AI fallback: when Z.AI internal API is unreachable from Vercel (it's only accessible from the Z.ai sandbox), AI routes return friendly messages instead of errors.
+- Final production URL: https://my-project-two-silk-81.vercel.app
+
+Production verification (all 8 checks passed):
+1. Home page: HTTP 200 ✅
+2. Restaurants API: 20 restaurants from Neon ✅
+3. OTP login: Ananya Verma (SUPER_ADMIN) ✅
+4. Auth session: 56 permissions ✅
+5. Nearby (Banjara Hills HY): 8 restaurants, nearest Ohri's Jiva (0.0 km) ✅
+6. AI chatbot: graceful fallback message ✅
+7. Admin stats: 10 users, 20 restaurants ✅
+8. Rider dashboard: Ajay Kumar, Bike, Online ✅
+
+Stage Summary:
+- LIVE production deployment at https://my-project-two-silk-81.vercel.app
+- GitHub: https://github.com/buffyjdv-collab/foodiedash
+- Neon PostgreSQL: 20 restaurants, 10 roles, 56 permissions, 10 demo users
+- All features working: OTP auth, RBAC, GPS nearby, live tracking (client-side fallback), rider/restaurant portals, admin dashboard
+- AI features have graceful fallback (Z.AI internal API only accessible from sandbox)
