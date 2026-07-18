@@ -60,6 +60,18 @@ const STATUS_FLOW = [
   'DELIVERED',
 ] as const
 
+// Timeline labels indexed to match STATUS_FLOW (used by the client-side fallback)
+const TIMELINE_LABELS = [
+  'Order placed',
+  'Restaurant accepted your order',
+  'Your food is being prepared',
+  'Order is ready for pickup',
+  'Delivery partner assigned',
+  'Delivery partner picked up your order',
+  'On the way to you',
+  'Order delivered. Enjoy your meal!',
+]
+
 const STATUS_LABELS: Record<string, string> = {
   PLACED: 'Order placed',
   ACCEPTED: 'Restaurant accepted your order',
@@ -148,6 +160,8 @@ export function OrderTracking({ orderId }: { orderId: string }) {
   const [error, setError] = useState<string | null>(null)
 
   const socketRef = useRef<Socket | null>(null)
+  const simIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const connectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const updateOrderStatus = useFoodStore((s) => s.updateOrderStatus)
   const setView = useFoodStore((s) => s.setView)
   const clearCart = useFoodStore((s) => s.clearCart)
@@ -179,32 +193,19 @@ export function OrderTracking({ orderId }: { orderId: string }) {
         setLoading(false)
 
         // ---- connect socket & start tracking ----
-        const socket = io('/', {
-          path: '/',
-          transports: ['websocket'],
-          query: { XTransformPort: '3004' },
-          reconnection: true,
-          reconnectionAttempts: 5,
-          reconnectionDelay: 1000,
-        })
-        socketRef.current = socket
-
-        const emitTrack = () => {
-          socket.emit('track-order', {
-            orderId,
-            restaurant: {
-              name: fetchedOrder.restaurant?.name ?? 'Restaurant',
-              lat: fetchedOrder.restaurant?.latitude ?? 12.9716,
-              lng: fetchedOrder.restaurant?.longitude ?? 77.5946,
-            },
-            destination: {
-              address: fetchedOrder.addressLine,
-            },
-          })
-        }
-        socket.on('connect', emitTrack)
+        // On Vercel (production), the WebSocket tracking service isn't available.
+        // We try to connect; if it doesn't respond within 4s, we fall back to a
+        // client-side simulation so the tracking UX still works.
+        const restLat = fetchedOrder.restaurant?.latitude ?? 12.9716
+        const restLng = fetchedOrder.restaurant?.longitude ?? 77.5946
+        const destLat = restLat + (Math.random() - 0.5) * 0.02
+        const destLng = restLng + (Math.random() - 0.5) * 0.02
 
         const handleUpdate = (state: TrackingState) => {
+          if (connectTimerRef.current) {
+            clearTimeout(connectTimerRef.current)
+            connectTimerRef.current = null
+          }
           setTracking(state)
           if (state.rider) {
             updateOrderStatus(orderId, state.status, {
@@ -215,11 +216,111 @@ export function OrderTracking({ orderId }: { orderId: string }) {
             updateOrderStatus(orderId, state.status)
           }
         }
-        socket.on('tracking-init', handleUpdate)
-        socket.on('tracking-update', handleUpdate)
-        socket.on('tracking-error', (e: { message?: string }) => {
-          setError(e?.message || 'Tracking error')
-        })
+
+        // Client-side simulation fallback (mirrors the server's lifecycle logic)
+        const startSimulation = () => {
+          const RIDER_NAMES = ['Ravi Kumar', 'Suresh Patel', 'Mohammed Irfan', 'Lakshmi N', 'Arjun Reddy', 'Sneha Reddy']
+          const riderName = RIDER_NAMES[Math.floor(Math.random() * RIDER_NAMES.length)]
+          const riderPhone = '+91' + String(Math.floor(9800000000 + Math.random() * 199999999))
+          let riderLat = restLat
+          let riderLng = restLng
+          let statusIdx = 0
+          const timeline = [
+            { status: 'PLACED', label: 'Order placed', at: new Date().toISOString() },
+          ]
+
+          const initialState: TrackingState = {
+            orderId,
+            status: 'PLACED',
+            rider: { name: riderName, phone: riderPhone, lat: riderLat, lng: riderLng },
+            restaurant: { name: fetchedOrder.restaurant?.name ?? 'Restaurant', lat: restLat, lng: restLng },
+            destination: { lat: destLat, lng: destLng, address: fetchedOrder.addressLine },
+            timeline,
+            startedAt: Date.now(),
+            updatedAt: Date.now(),
+          }
+          handleUpdate(initialState)
+
+          simIntervalRef.current = setInterval(() => {
+            statusIdx++
+            if (statusIdx >= STATUS_FLOW.length) {
+              if (simIntervalRef.current) { clearInterval(simIntervalRef.current); simIntervalRef.current = null }
+              return
+            }
+            const nextStatus = STATUS_FLOW[statusIdx]
+            const label = TIMELINE_LABELS[statusIdx]
+            // Move rider 25% toward destination on movement statuses
+            if (['ASSIGNED', 'PICKED_UP', 'ON_ROUTE'].includes(nextStatus)) {
+              riderLat = riderLat + (destLat - riderLat) * 0.25
+              riderLng = riderLng + (destLng - riderLng) * 0.25
+            }
+            if (nextStatus === 'DELIVERED') {
+              riderLat = destLat
+              riderLng = destLng
+            }
+            timeline.push({ status: nextStatus, label, at: new Date().toISOString() })
+            handleUpdate({
+              orderId,
+              status: nextStatus,
+              rider: { name: riderName, phone: riderPhone, lat: riderLat, lng: riderLng },
+              restaurant: { name: fetchedOrder.restaurant?.name ?? 'Restaurant', lat: restLat, lng: restLng },
+              destination: { lat: destLat, lng: destLng, address: fetchedOrder.addressLine },
+              timeline,
+              startedAt: Date.now(),
+              updatedAt: Date.now(),
+            })
+          }, 5000)
+        }
+
+        // Fallback timer: if socket doesn't emit within 4s, start simulation
+        connectTimerRef.current = setTimeout(() => {
+          if (!tracking && simIntervalRef.current === null) {
+            startSimulation()
+          }
+        }, 4000)
+
+        // Try socket connection (works in sandbox with Caddy gateway; fails gracefully on Vercel)
+        try {
+          const socket = io('/', {
+            path: '/',
+            transports: ['websocket'],
+            query: { XTransformPort: '3004' },
+            reconnection: false,
+            timeout: 3000,
+          })
+          socketRef.current = socket
+
+          const emitTrack = () => {
+            socket.emit('track-order', {
+              orderId,
+              restaurant: {
+                name: fetchedOrder.restaurant?.name ?? 'Restaurant',
+                lat: restLat,
+                lng: restLng,
+              },
+              destination: {
+                address: fetchedOrder.addressLine,
+                lat: destLat,
+                lng: destLng,
+              },
+            })
+          }
+          socket.on('connect', emitTrack)
+          socket.on('tracking-init', handleUpdate)
+          socket.on('tracking-update', handleUpdate)
+          socket.on('tracking-error', (e: { message?: string }) => {
+            // Socket errored — fall back to simulation if not already running
+            if (simIntervalRef.current === null) startSimulation()
+            void e
+          })
+          socket.on('connect_error', () => {
+            // Can't connect (e.g. on Vercel) — fall back to simulation
+            if (simIntervalRef.current === null) startSimulation()
+          })
+        } catch {
+          // Socket init failed — fall back to simulation
+          startSimulation()
+        }
       })
       .catch((e: unknown) => {
         if (!mounted) return
@@ -238,6 +339,14 @@ export function OrderTracking({ orderId }: { orderId: string }) {
           // ignore
         }
         socketRef.current = null
+      }
+      if (simIntervalRef.current) {
+        clearInterval(simIntervalRef.current)
+        simIntervalRef.current = null
+      }
+      if (connectTimerRef.current) {
+        clearTimeout(connectTimerRef.current)
+        connectTimerRef.current = null
       }
     }
   }, [orderId, updateOrderStatus])
